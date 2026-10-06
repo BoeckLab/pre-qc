@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pre-qc"
+version = "0.1.0"
+description = "Pre-pipeline QC review: spot-check raw movies good/bad in napari and characterize analyzability before running the ASCT pipeline."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "EUPL-1.2" }
+authors = [
+    { name = "Queralt Martin-Saladich", email = "queralt.martinsaladich@unibas.ch" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: European Union Public Licence 1.2 (EUPL 1.2)",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
+dependencies = [
+    "napari[pyqt5]>=0.5",
+    "magicgui>=0.8",
+    "tifffile>=2024.1.30",
+    "imagecodecs>=2024.1.1",
+    "scikit-image>=0.22",
+    "scipy>=1.11",
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "nd2>=0.10,<0.11",
+    "matplotlib>=3.7",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+pre-qc = "pre_qc.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
