@@ -131,12 +131,45 @@ def _load_tiff(path: Path) -> Movie:
     with tifffile.TiffFile(str(path)) as tif:
         series = tif.series[0]
         arr = series.asarray()
-        axes = series.axes  # e.g. "TCYX", "CYX", "TYX", "YX"
+        axes = series.axes  # e.g. "TCYX", "CYX", "TYX", "YX" -- or a generic "I..."
+        # if tifffile couldn't resolve T/C/Z from the file's own axis metadata
+        # (seen on real NIS-Elements/nd2-sourced OME-TIFFs: a flat "I" sequence
+        # axis instead of "TC", even though the OME-XML has unambiguous
+        # SizeT/SizeC). ``set(axes) - set("TCZYXS")`` below is what catches
+        # this -- "I" isn't in that set, so _ensure_tcyx would otherwise raise.
+        if set(axes.upper()) - set("TCZYXS") and tif.is_ome and tif.ome_metadata:
+            arr, axes = _reshape_via_ome_planes(arr, tif.ome_metadata)
 
         arr, axes = _ensure_tcyx(arr, axes)
         channel_names = _read_channel_names(tif, n_channels=arr.shape[1])
 
     return Movie(data=arr, channel_names=channel_names, path=path)
+
+
+def _reshape_via_ome_planes(arr: np.ndarray, ome_xml: str) -> tuple:
+    """Reshape a flat ``(n_planes, Y, X)`` stack into ``(T, C, Y, X)`` using
+    the OME-XML's own per-plane ``TheT``/``TheC``/``TheZ`` indices, rather
+    than trusting tifffile's (sometimes unresolved) axes string. Plane order
+    in ``Pixels.planes`` is assumed to match storage order, per the OME-TIFF
+    spec -- this sidesteps needing to interpret ``DimensionOrder`` algebra
+    directly."""
+    import ome_types
+
+    pixels = ome_types.from_xml(ome_xml).images[0].pixels
+    if pixels.size_z and pixels.size_z > 1:
+        raise MovieResolutionError(f"3D (SizeZ={pixels.size_z}>1) movies are not supported")
+    if len(pixels.planes) != arr.shape[0]:
+        raise MovieResolutionError(
+            f"OME metadata lists {len(pixels.planes)} planes but the file has "
+            f"{arr.shape[0]} -- can't reshape reliably."
+        )
+
+    n_frames, n_channels = pixels.size_t, pixels.size_c
+    height, width = arr.shape[-2:]
+    out = np.empty((n_frames, n_channels, height, width), dtype=arr.dtype)
+    for i, plane in enumerate(pixels.planes):
+        out[plane.the_t, plane.the_c] = arr[i]
+    return out, "TCYX"
 
 
 def _load_nd2(path: Path) -> Movie:

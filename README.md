@@ -34,9 +34,11 @@ bash scripts/install.sh
 ```
 
 This clones (or updates) `~/pre-qc`, builds an isolated venv there, and
-installs **Pre QC.app** into `/Applications` — a thin launcher (not a
-frozen binary) that asks which CSV to review (native file picker), then
-runs `pre-qc` against it in a visible Terminal window so any startup
+installs **QC.app** into `/Applications` — one shared app identity/icon for
+the whole qc/ suite (pre-qc now; post-qc once it exists at `~/post-qc`,
+at which point the same app picks between them). It's a thin launcher
+(not a frozen binary) that asks which CSV to review (native file picker),
+then runs `pre-qc` against it in a visible Terminal window so any startup
 warnings are seen before napari opens. After this, **open it from
 `/Applications` or the Dock** like any other app — no Terminal needed again
 for routine use (right-click its Dock icon → **Options** → **Keep in
@@ -232,14 +234,16 @@ pre-qc/
 ├── pyproject.toml
 ├── README.md
 ├── scripts/
-│   └── install.sh   # macOS one-time: clone/venv/pip install -e . + generates /Applications/Pre QC.app
+│   └── install.sh   # macOS one-time: clone/venv/pip install -e . + generates /Applications/QC.app
 ├── src/pre_qc/
 │   ├── io.py        # uncompressed-movie loading (nd2 + tiff/ome-tiff), path resolution
 │   ├── manifest.py  # CSV manifest, crash-safe good/bad progress tracking
 │   ├── metrics.py   # sharpness/drift/saturation/foreground-fraction proxies
 │   ├── report.py    # static HTML + CSV report (matplotlib plots, base64-embedded)
 │   ├── widget.py     # napari dock widget: scroll, mark good/bad, Finish
-│   └── app.py       # CLI entry point (`pre-qc <csv>`)
+│   ├── app.py       # CLI entry point (`pre-qc <csv>`)
+│   └── assets/
+│       └── qc_icon.png  # shared app icon -- same one post-qc will use
 └── tests/
     └── test_pre_qc.py  # io/manifest/metrics logic (no napari/Qt needed)
 ```
