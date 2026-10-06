@@ -45,18 +45,121 @@ Dock** to pin it).
 To pick up updates later: re-run `bash scripts/install.sh`, or `cd
 ~/pre-qc && git pull && source .venv/bin/activate && pip install -e .`.
 
-## Install (manual / development / other OS)
+## Install (terminal — Linux/other, or macOS without the click-through app)
+
+Requires **Python 3.10+** (napari doesn't support older). Check what you
+have:
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate
+python3 --version
+```
+
+If it's older than 3.10, install a newer interpreter first — e.g. on
+Ubuntu/Debian: `sudo apt install python3.11 python3.11-venv`; on macOS:
+`brew install python@3.11`.
+
+**1. One-time SSH key, if you don't already have one registered with
+GitHub** (private repo — any BoeckLab org member already has read access):
+
+```bash
+ssh -T git@github.com
+```
+
+If that prints `Hi <username>! You've successfully authenticated...`, skip
+to step 2. If it says `Permission denied (publickey)`:
+
+```bash
+ssh-keygen -t ed25519 -C "your.email@unibas.ch"
+eval "$(ssh-agent -s)"
+ssh-add ~/.ssh/id_ed25519
+cat ~/.ssh/id_ed25519.pub
+```
+
+Paste the printed key at **github.com → Settings → SSH and GPG keys → New
+SSH key**, then re-run `ssh -T git@github.com` to confirm it worked.
+
+**2. Clone and install into a virtual environment:**
+
+```bash
+git clone git@github.com:BoeckLab/pre-qc.git
+cd pre-qc
+python3.11 -m venv .venv        # or whichever 3.10+ interpreter you have
+source .venv/bin/activate
+pip install --upgrade pip
 pip install -e .
+```
+
+**3. Run it** (see "Input CSV" below for the CSV format; `experiment_path`
+needs to resolve to something locally readable from wherever you run this —
+see "Accessing experiment data from sciCORE" if your movies live there):
+
+```bash
 pre-qc wells_to_check.csv
 ```
+
+**4. Routine use after the first install** — just re-activate the venv,
+no reinstall needed unless you want to pick up updates:
+
+```bash
+cd pre-qc && source .venv/bin/activate && pre-qc wells_to_check.csv
+```
+
+To pick up updates: `git pull && pip install -e .` inside that same venv.
 
 (Standalone project — no dependency on `cell-slate` or `HiTMicTools`,
 deliberately, so it's a light install for someone who hasn't set either up
 yet.)
+
+## Accessing experiment data from sciCORE
+
+`experiment_path` in the input CSV must be a path that's locally readable
+from wherever `pre-qc` runs — there's no built-in SSH/S3 support, pre-qc
+only ever opens local files. **Don't run pre-qc itself on a sciCORE login
+node** (interactive GUI apps don't belong there, and X11-forwarded napari
+rendering is too laggy for real use anyway) — install it on your own
+machine and bring the data to it, one of:
+
+**A. SSHFS mount (persists across reboots without re-authenticating each time):**
+
+```bash
+# Linux:
+sudo apt install sshfs
+# macOS:
+brew install macfuse && brew install gromgit/fuse/sshfs-mac   # macFUSE broke Homebrew's official sshfs cask; this tap has a working build
+
+mkdir -p ~/scicore
+sshfs <username>@login-node.scicore.unibas.ch:/scicore/home/boeluc00/<username> ~/scicore -o volname=scicore
+```
+
+(macOS: first install needs a one-time approval in **System Settings →
+Privacy & Security**, sometimes needs a reboot to fully take.) Once
+mounted, point `experiment_path` at e.g. `~/scicore/experiment_042`.
+Unmount when done: `umount ~/scicore` (or `fusermount -u ~/scicore` on
+Linux).
+
+**B. macOS only — Finder's "Connect to Server" (no terminal, no install):**
+
+Press **⌘K** in Finder, enter `smb://toucan-all.scicore.unibas.ch/RINFsci$`,
+log in with your sciCORE credentials. Mounts under `/Volumes/RINFsci$`.
+
+**C. Off-campus / one-off — rsync a copy locally:**
+
+```bash
+rsync -avP <username>@login-node.scicore.unibas.ch:/path/to/experiment_042/ ~/local_qc_data/experiment_042/
+```
+
+Then point `experiment_path` at `~/local_qc_data/experiment_042`.
+
+**JetRaw-compressed files (`.ome.p.tiff`) can't be opened by pre-qc at all**
+(see "Input CSV" below) — decompress them on sciCORE first:
+
+```bash
+# on sciCORE
+jetraw-tools decompress <folder> --extension ".ome.p.tiff"
+```
+
+See BacNets' `ONBOARDING_JETRAW.md` for setup details, then bring the plain
+`.tiff`/`.nd2` output over with one of A/B/C above.
 
 ## Input CSV
 
