@@ -5,10 +5,20 @@ additive-blended layer per channel; napari's own slider scrubs frames).
 Marking good/bad saves the sidecar results CSV immediately, so quitting
 mid-review never loses progress, then auto-advances to the next unreviewed
 row.
+
+Movies are loaded on a background QThread, not the GUI thread: these can be
+large (full-resolution multi-hundred-frame stacks) and routinely live on a
+network mount (sciCORE via SSHFS/SMB), so a synchronous read can take
+anywhere from several seconds to over a minute. Loading it inline in
+``__init__``/the GUI thread would freeze event processing before the window
+even finishes its first paint -- napari's main window can appear to never
+open at all, not just be slow, since nothing repaints until the blocking
+call returns.
 """
 
 from pathlib import Path
 
+from qtpy.QtCore import QObject, QThread, Signal
 from qtpy.QtWidgets import (
     QGroupBox,
     QLabel,
@@ -25,6 +35,22 @@ from .metrics import compute_batch_metrics
 from .report import write_html_report
 
 
+class _MovieLoadWorker(QObject):
+    finished = Signal(object, object)  # (Movie or None, error message or None)
+
+    def __init__(self, path):
+        super().__init__()
+        self.path = path
+
+    def run(self) -> None:
+        try:
+            movie = load_any_movie(self.path)
+        except Exception as exc:  # noqa: BLE001 -- surfaced to the user, not swallowed
+            self.finished.emit(None, str(exc))
+        else:
+            self.finished.emit(movie, None)
+
+
 class QCWidget(QWidget):
     def __init__(self, viewer, csv_path, rows, parent=None):
         super().__init__(parent)
@@ -33,6 +59,9 @@ class QCWidget(QWidget):
         self.rows = rows
         self.index = self._first_unreviewed_index()
         self._layers = []
+        self._load_thread = None
+        self._load_worker = None
+        self._load_token = 0  # guards against a stale load finishing after Next/Prev moved on
 
         layout = QVBoxLayout()
         self.setLayout(layout)
@@ -66,20 +95,20 @@ class QCWidget(QWidget):
         self.note_edit.setPlaceholderText("optional note")
         vbox.addWidget(self.note_edit)
 
-        good_btn = QPushButton("Mark GOOD (g)")
-        good_btn.clicked.connect(lambda: self._mark("good"))
-        vbox.addWidget(good_btn)
+        self.good_btn = QPushButton("Mark GOOD (g)")
+        self.good_btn.clicked.connect(lambda: self._mark("good"))
+        vbox.addWidget(self.good_btn)
 
-        bad_btn = QPushButton("Mark BAD (b)")
-        bad_btn.clicked.connect(lambda: self._mark("bad"))
-        vbox.addWidget(bad_btn)
+        self.bad_btn = QPushButton("Mark BAD (b)")
+        self.bad_btn.clicked.connect(lambda: self._mark("bad"))
+        vbox.addWidget(self.bad_btn)
 
-        prev_btn = QPushButton("← Prev")
-        prev_btn.clicked.connect(self._go_prev)
-        vbox.addWidget(prev_btn)
-        next_btn = QPushButton("Next →")
-        next_btn.clicked.connect(self._go_next)
-        vbox.addWidget(next_btn)
+        self.prev_btn = QPushButton("← Prev")
+        self.prev_btn.clicked.connect(self._go_prev)
+        vbox.addWidget(self.prev_btn)
+        self.next_btn = QPushButton("Next →")
+        self.next_btn.clicked.connect(self._go_next)
+        vbox.addWidget(self.next_btn)
 
         self.progress_label = QLabel()
         vbox.addWidget(self.progress_label)
@@ -116,12 +145,45 @@ class QCWidget(QWidget):
         if row is None or row.resolution_error:
             return
 
-        movie = load_any_movie(row.resolved_path)
+        self._load_token += 1
+        token = self._load_token
+        self._set_controls_enabled(False)
+        self.path_label.setText(f"loading {row.resolved_path} ...")
+
+        thread = QThread(self)
+        worker = _MovieLoadWorker(row.resolved_path)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(lambda movie, error: self._on_movie_loaded(token, movie, error))
+        worker.finished.connect(thread.quit)
+        thread.finished.connect(thread.deleteLater)
+        # Keep references alive on self -- nothing else holds them, and a
+        # GC'd QThread/QObject mid-run is a crash, not a no-op.
+        self._load_thread = thread
+        self._load_worker = worker
+        thread.start()
+
+    def _on_movie_loaded(self, token: int, movie, error) -> None:
+        if token != self._load_token:
+            return  # user already navigated away (Next/Prev) -- discard this stale result
+        self._set_controls_enabled(True)
+        row = self._current_row()
+        if error is not None:
+            self.path_label.setText(f"FAILED TO LOAD: {error}")
+            return
+        if row is None:
+            return
+
         for c, name in enumerate(movie.channel_names):
             layer = self.viewer.add_image(movie.data[:, c, :, :], name=name, blending="additive")
             self._layers.append(layer)
         if self.viewer.dims.current_step:
             self.viewer.dims.current_step = (0,) * len(self.viewer.dims.current_step)
+        self.path_label.setText(row.resolution_error or row.resolved_path)
+
+    def _set_controls_enabled(self, enabled: bool) -> None:
+        for widget in (self.good_btn, self.bad_btn, self.prev_btn, self.next_btn, self.finish_btn):
+            widget.setEnabled(enabled)
 
     def _refresh_labels(self, row) -> None:
         summary = manifest.review_summary(self.rows)

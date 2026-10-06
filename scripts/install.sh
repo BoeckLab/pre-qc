@@ -12,13 +12,18 @@
 # exists at ~/post-qc with its own venv -- the launcher below checks for
 # that and only shows a picker once there's actually a second tool
 # installed). It asks (via a native file picker) which CSV to review,
-# then runs the `pre-qc` console script against it in a Terminal window
-# (so any warnings -- e.g. unresolved CSV rows -- are visible before
-# napari opens). After this, open it from /Applications or the Dock like
-# any other app -- no `python`/venv activation needed again for routine
-# use. This script is only for the very first install, or to rebuild the
-# launcher app if it's ever deleted; re-run it (or `cd ~/pre-qc && git
-# pull && pip install -e .`) to pick up updates.
+# then `exec`s the `pre-qc` console script in place of the launcher
+# process itself -- not spawned in a separate Terminal window -- so the
+# running app keeps the bundle's identity/Dock icon throughout, the same
+# way cell-slate's own launcher does. (An earlier version of this script
+# ran the command via `osascript ... tell application "Terminal"`,
+# which spawned a second, Terminal-owned process with its own generic
+# icon alongside the launcher's -- fixed because it looked like two
+# different things were opening.) After this, open it from /Applications
+# or the Dock like any other app -- no `python`/venv activation needed
+# again for routine use. This script is only for the very first install,
+# or to rebuild the launcher app if it's ever deleted; re-run it (or `cd
+# ~/pre-qc && git pull && pip install -e .`) to pick up updates.
 set -euo pipefail
 
 REPO_URL="git@github.com:BoeckLab/pre-qc.git"
@@ -69,16 +74,18 @@ fi
 # The launcher picks a tool first (only if post-qc is actually installed
 # alongside pre-qc -- otherwise it skips straight to pre-qc, since a
 # picker with one real option and one "not installed" option is just
-# friction), then asks which CSV to review via a native file-picker
-# dialog, then runs the review in a visible Terminal window so startup
-# warnings (e.g. CSV rows that couldn't be resolved to a file) are seen
-# before napari opens, rather than silently swallowed by a backgrounded
-# GUI app.
+# friction), asks which CSV to review via a native file-picker dialog,
+# then `exec`s straight into the console script -- no Terminal window,
+# no second process. Startup warnings that used to print to that
+# Terminal (e.g. CSV rows that couldn't be resolved to a file) are
+# already surfaced inside the GUI itself (QCWidget shows each
+# unresolved row's error inline, and warns again before Finish runs), so
+# nothing is lost by dropping the Terminal step.
 cat > "$APP_DIR/Contents/MacOS/launcher" <<'LAUNCHER'
 #!/bin/bash
 TOOL="pre-qc"
 if [ -d "$HOME/post-qc/.venv" ]; then
-    CHOICE=$(osascript -e 'choose from list {"Pre-QC (before pipeline)", "Post-QC (after pipeline)"} with prompt "Which QC step?" without multiple selections allowed' 2>/dev/null) || exit 0
+    CHOICE=$(osascript -e 'choose from list {"Pre-QC (before pipeline)", "Post-QC (after pipeline)"} with prompt "Which QC step?" without multiple selections allowed') || exit 0
     [ "$CHOICE" = "false" ] && exit 0
     case "$CHOICE" in
         "Post-QC"*) TOOL="post-qc" ;;
@@ -86,7 +93,7 @@ if [ -d "$HOME/post-qc/.venv" ]; then
     esac
 fi
 
-CSV_PATH=$(osascript -e 'POSIX path of (choose file with prompt "Select the QC input CSV (experiment_path, position columns):" of type {"csv"})' 2>/dev/null) || exit 0
+CSV_PATH=$(osascript -e 'POSIX path of (choose file with prompt "Select the QC input CSV (experiment_path, position columns):" of type {"csv"})') || exit 0
 
 if [ "$TOOL" = "post-qc" ]; then
     VENV="$HOME/post-qc/.venv"
@@ -94,12 +101,8 @@ else
     VENV="$HOME/pre-qc/.venv"
 fi
 
-osascript <<APPLESCRIPT
-tell application "Terminal"
-    activate
-    do script "source \"$VENV/bin/activate\" && $TOOL \"$CSV_PATH\""
-end tell
-APPLESCRIPT
+source "$VENV/bin/activate"
+exec "$TOOL" "$CSV_PATH"
 LAUNCHER
 chmod +x "$APP_DIR/Contents/MacOS/launcher"
 

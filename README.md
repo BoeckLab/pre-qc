@@ -38,8 +38,9 @@ installs **QC.app** into `/Applications` — one shared app identity/icon for
 the whole qc/ suite (pre-qc now; post-qc once it exists at `~/post-qc`,
 at which point the same app picks between them). It's a thin launcher
 (not a frozen binary) that asks which CSV to review (native file picker),
-then runs `pre-qc` against it in a visible Terminal window so any startup
-warnings are seen before napari opens. After this, **open it from
+then runs `pre-qc` directly in place of itself — no separate Terminal
+window, so there's only ever one icon/process for the whole thing, the
+same way cell-slate's own launcher works. After this, **open it from
 `/Applications` or the Dock** like any other app — no Terminal needed again
 for routine use (right-click its Dock icon → **Options** → **Keep in
 Dock** to pin it).
