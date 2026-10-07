@@ -36,19 +36,24 @@ from .report import write_html_report
 
 
 class _MovieLoadWorker(QObject):
-    finished = Signal(object, object)  # (Movie or None, error message or None)
+    # (token, Movie or None, error message or None). The token travels with
+    # the signal itself (rather than being captured in a lambda at connect
+    # time) so this can connect straight to a bound QObject method -- see
+    # QCWidget._load_current's comment on why that matters for thread safety.
+    finished = Signal(int, object, object)
 
-    def __init__(self, path):
+    def __init__(self, path, token: int):
         super().__init__()
         self.path = path
+        self.token = token
 
     def run(self) -> None:
         try:
             movie = load_any_movie(self.path)
         except Exception as exc:  # noqa: BLE001 -- surfaced to the user, not swallowed
-            self.finished.emit(None, str(exc))
+            self.finished.emit(self.token, None, str(exc))
         else:
-            self.finished.emit(movie, None)
+            self.finished.emit(self.token, movie, None)
 
 
 class QCWidget(QWidget):
@@ -151,10 +156,19 @@ class QCWidget(QWidget):
         self.path_label.setText(f"loading {row.resolved_path} ...")
 
         thread = QThread(self)
-        worker = _MovieLoadWorker(row.resolved_path)
+        worker = _MovieLoadWorker(row.resolved_path, token)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
-        worker.finished.connect(lambda movie, error: self._on_movie_loaded(token, movie, error))
+        # Connect straight to the bound method (never a lambda/closure) --
+        # Qt only auto-detects "this must be marshaled back to the GUI
+        # thread" when the slot is a bound method of a QObject, so it can
+        # read the receiver's (self's) thread affinity. A lambda has no
+        # such affinity, so Qt has no reliable signal to fall back to a
+        # queued connection -- it can end up invoking _on_movie_loaded (and
+        # therefore viewer.add_image(), which touches Qt/napari internals)
+        # directly on this background thread, which napari/Qt do not
+        # support and can crash on.
+        worker.finished.connect(self._on_movie_loaded)
         worker.finished.connect(thread.quit)
         thread.finished.connect(thread.deleteLater)
         # Keep references alive on self -- nothing else holds them, and a
