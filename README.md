@@ -223,20 +223,37 @@ This opens napari with a **QC review** dock:
 
 Deliberately **not** a run of the real segmentation model — that would
 partly defeat the point of checking before spending GPU hours. Instead,
-four fast, CPU-only proxies computed directly on pixels (channel 0 is
-assumed to be brightfield, matching the BF-then-FL convention used
-elsewhere in the lab's pipelines):
+fast, CPU-only proxies computed directly on pixels, split by channel
+(channel 0 = brightfield/BF, channel 1 = PI/fluorescence — the BF-then-FL
+convention used elsewhere in the lab's pipelines; PI metrics are skipped for
+single-channel movies):
 
+**Brightfield (channel 0):**
 - **sharpness** — variance-of-Laplacian per frame; low/falling values flag
   out-of-focus acquisition.
+- **mean intensity / contrast** — flags a too-dark, blown-out, or
+  flat/low-contrast acquisition.
 - **drift** — frame-to-frame phase-cross-correlation shift, accumulated;
   large cumulative drift flags a stage/focus problem that will confuse
   tracking.
-- **saturation** — fraction of pixels at the dtype's max value per channel;
-  high values flag clipped/overexposed fluorescence.
 - **foreground fraction** — rough Otsu-threshold coverage, not a cell
   count; flags empty wells (~0) or fully confluent/unsegmentable fields
   (~1).
+
+**PI / fluorescence (channel 1):**
+- **mean intensity** — flags a channel that's effectively all-dark (wrong
+  filter cube, laser off, bad exposure) rather than a real all-negative
+  biological result.
+- **signal ratio** (99th-percentile / median intensity) — a
+  segmentation-free contrast proxy; near 1 means no bright signal stands
+  out above background at all, well above 1 means real dynamic range
+  exists for PI+ cells to be distinguishable.
+- **positive fraction** — rough Otsu-threshold coverage on this channel,
+  analogous to BF's foreground fraction; not a real PI+ classification.
+
+**Both channels:**
+- **saturation** — fraction of pixels at the dtype's max value, tracked per
+  channel; high values flag clipping/overexposure.
 
 These are heuristic proxies for "will the real pipeline have something to
 work with", not a guarantee of downstream pipeline quality.

@@ -150,15 +150,38 @@ def test_compute_movie_metrics_shapes(tmp_path):
 
     assert metrics.n_frames == 5
     assert metrics.n_channels == 2
-    assert metrics.sharpness.shape == (5,)
+    assert metrics.bf_sharpness.shape == (5,)
+    assert metrics.bf_mean_intensity.shape == (5,)
+    assert metrics.bf_contrast.shape == (5,)
     assert metrics.saturation_frac.shape == (5, 2)
     assert metrics.drift_px.shape == (5,)
     assert metrics.drift_px[0] == 0.0
-    assert metrics.foreground_frac.shape == (5,)
+    assert metrics.bf_foreground_frac.shape == (5,)
+    # 2-channel movie -- PI (channel 1) metrics must be populated
+    assert metrics.pi_mean_intensity.shape == (5,)
+    assert metrics.pi_signal_ratio.shape == (5,)
+    assert metrics.pi_positive_frac.shape == (5,)
 
     summary = summarize(metrics)
     assert summary["n_frames"] == 5
-    assert 0.0 <= summary["foreground_frac_median"] <= 1.0
+    assert 0.0 <= summary["bf_foreground_frac_median"] <= 1.0
+    assert summary["pi_mean_intensity_median"] is not None
+    assert 0.0 <= summary["pi_positive_frac_median"] <= 1.0
+
+
+def test_compute_movie_metrics_single_channel_has_no_pi_metrics(tmp_path):
+    path = tmp_path / "bf_only.tiff"
+    _write_tiff(path, shape=(3, 1, 16, 16))
+
+    metrics = compute_movie_metrics(path)
+
+    assert metrics.n_channels == 1
+    assert metrics.pi_mean_intensity is None
+    assert metrics.pi_signal_ratio is None
+    assert metrics.pi_positive_frac is None
+
+    summary = summarize(metrics)
+    assert summary["pi_mean_intensity_median"] is None
 
 
 def test_compute_movie_metrics_flags_saturation(tmp_path):
