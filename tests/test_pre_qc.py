@@ -160,13 +160,27 @@ def test_compute_movie_metrics_shapes(tmp_path):
     # 2-channel movie -- PI (channel 1) metrics must be populated
     assert metrics.pi_mean_intensity.shape == (5,)
     assert metrics.pi_signal_ratio.shape == (5,)
+    assert metrics.pi_p95.shape == (5,)
+    assert metrics.pi_snr.shape == (5,)
     assert metrics.pi_positive_frac.shape == (5,)
 
     summary = summarize(metrics)
     assert summary["n_frames"] == 5
     assert 0.0 <= summary["bf_foreground_frac_median"] <= 1.0
     assert summary["pi_mean_intensity_median"] is not None
+    assert summary["pi_p95_median"] is not None
+    assert summary["pi_snr_median"] is not None
     assert 0.0 <= summary["pi_positive_frac_median"] <= 1.0
+
+
+def test_pi_snr_zero_for_flat_frame(tmp_path):
+    path = tmp_path / "flat_pi.tiff"
+    data = np.full((2, 2, 8, 8), 1000, dtype=np.uint16)
+    tifffile.imwrite(path, data, metadata={"axes": "TCYX"})
+
+    metrics = compute_movie_metrics(path)
+
+    assert np.all(metrics.pi_snr == 0.0)
 
 
 def test_compute_movie_metrics_single_channel_has_no_pi_metrics(tmp_path):
@@ -178,6 +192,8 @@ def test_compute_movie_metrics_single_channel_has_no_pi_metrics(tmp_path):
     assert metrics.n_channels == 1
     assert metrics.pi_mean_intensity is None
     assert metrics.pi_signal_ratio is None
+    assert metrics.pi_p95 is None
+    assert metrics.pi_snr is None
     assert metrics.pi_positive_frac is None
 
     summary = summarize(metrics)

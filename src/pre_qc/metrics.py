@@ -28,6 +28,16 @@ PI / fluorescence (channel 1):
   segmentation-free contrast proxy -- near 1 means no distinguishable
   bright signal above background (flat/noise-only channel); well above 1
   means real dynamic range exists for PI+ cells to stand out against.
+- p95 (95th-percentile intensity): a direct brightness percentile, less
+  sensitive to a handful of hot/dead pixels than a true max, and less
+  sensitive to overall exposure than mean_intensity -- "how bright does
+  the brighter end of this frame actually get".
+- snr: (mean of Otsu-foreground pixels - mean of Otsu-background pixels) /
+  std of Otsu-background pixels -- a standard microscopy signal-to-noise
+  definition, distinct from signal_ratio (that's a cheap percentile ratio;
+  this one is background-noise-aware, so it also flags a channel with
+  fine dynamic range but too much background noise to actually segment
+  PI+ cells from).
 - positive_fraction: Otsu-threshold coverage, analogous to BF's
   foreground_fraction -- a rough estimate of how much of the field reads as
   "bright" on this channel, not a real PI+ classification.
@@ -73,6 +83,8 @@ class MovieMetrics:
     # PI / fluorescence (channel 1) -- None if the movie has no 2nd channel
     pi_mean_intensity: np.ndarray | None = None  # (T,)
     pi_signal_ratio: np.ndarray | None = None  # (T,)
+    pi_p95: np.ndarray | None = None  # (T,)
+    pi_snr: np.ndarray | None = None  # (T,)
     pi_positive_frac: np.ndarray | None = None  # (T,)
 
 
@@ -86,11 +98,13 @@ def compute_movie_metrics(path) -> MovieMetrics:
         [[_saturation_fraction(data[t, c]) for c in range(n_channels)] for t in range(n_frames)]
     )
 
-    pi_mean_intensity = pi_signal_ratio = pi_positive_frac = None
+    pi_mean_intensity = pi_signal_ratio = pi_p95 = pi_snr = pi_positive_frac = None
     if n_channels > PI_CHANNEL:
         pi = data[:, PI_CHANNEL, :, :]
         pi_mean_intensity = np.array([float(frame.mean()) for frame in pi])
         pi_signal_ratio = np.array([_signal_ratio(frame) for frame in pi])
+        pi_p95 = np.array([float(np.percentile(frame, 95)) for frame in pi])
+        pi_snr = np.array([_snr(frame) for frame in pi])
         pi_positive_frac = np.array([_foreground_fraction(frame) for frame in pi])
 
     return MovieMetrics(
@@ -108,6 +122,8 @@ def compute_movie_metrics(path) -> MovieMetrics:
         drift_px=_cumulative_drift(bf),
         pi_mean_intensity=pi_mean_intensity,
         pi_signal_ratio=pi_signal_ratio,
+        pi_p95=pi_p95,
+        pi_snr=pi_snr,
         pi_positive_frac=pi_positive_frac,
     )
 
@@ -139,6 +155,24 @@ def _signal_ratio(frame: np.ndarray) -> float:
     if median <= 0:
         return 0.0 if p99 <= 0 else float("inf")
     return p99 / median
+
+
+def _snr(frame: np.ndarray) -> float:
+    """Standard microscopy-style SNR: (foreground mean - background mean) /
+    background std, with foreground/background split by Otsu threshold.
+    0 for a flat frame (nothing to threshold) or zero-variance background
+    (avoids a division by zero)."""
+    if frame.max() == frame.min():
+        return 0.0
+    threshold = threshold_otsu(frame)
+    foreground = frame[frame > threshold]
+    background = frame[frame <= threshold]
+    if background.size == 0 or foreground.size == 0:
+        return 0.0
+    background_std = float(background.std())
+    if background_std == 0:
+        return 0.0
+    return float((foreground.mean() - background.mean()) / background_std)
 
 
 def _cumulative_drift(bf_stack: np.ndarray) -> np.ndarray:
@@ -173,10 +207,14 @@ def summarize(metrics: MovieMetrics) -> dict:
     if metrics.pi_mean_intensity is not None:
         record["pi_mean_intensity_median"] = float(np.median(metrics.pi_mean_intensity))
         record["pi_signal_ratio_median"] = float(np.median(metrics.pi_signal_ratio))
+        record["pi_p95_median"] = float(np.median(metrics.pi_p95))
+        record["pi_snr_median"] = float(np.median(metrics.pi_snr))
         record["pi_positive_frac_median"] = float(np.median(metrics.pi_positive_frac))
     else:
         record["pi_mean_intensity_median"] = None
         record["pi_signal_ratio_median"] = None
+        record["pi_p95_median"] = None
+        record["pi_snr_median"] = None
         record["pi_positive_frac_median"] = None
     return record
 
@@ -194,6 +232,7 @@ def compute_batch_metrics(rows) -> tuple:
             "experiment_path": row.experiment_path,
             "position": row.position,
             "resolved_path": row.resolved_path,
+            **row.extra,  # e.g. "condition" -- carried through so the report can label by it
         }
         try:
             metrics = compute_movie_metrics(row.resolved_path)

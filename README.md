@@ -173,25 +173,40 @@ See BacNets' `ONBOARDING_JETRAW.md` for setup details, then bring the plain
 
 ## Input CSV
 
-One row per well/position to check. Copy
-[`templates/wells_to_check_template.csv`](templates/wells_to_check_template.csv)
-and fill in your own paths/positions rather than writing one from scratch:
+**One shared `experiment_path` for the whole experiment, one row per
+well/position inside it.** `experiment_path` is the *single top-level
+folder* that holds every movie for that experiment — it's the same value
+repeated down the column, not a different folder per row. `position` is
+just that well's label (letter + number, e.g. `A1`, `A12`) — pre-qc finds
+the one file under `experiment_path` whose name contains it, so you don't
+need to know or write out each movie's actual filename.
+
+Copy [`templates/wells_to_check_template.csv`](templates/wells_to_check_template.csv)
+and fill in your own path/positions rather than writing one from scratch:
 
 ```csv
 experiment_path,position,condition
 /scicore/projects/rinfsci/<you>/<your_experiment_folder>,A1,control
 /scicore/projects/rinfsci/<you>/<your_experiment_folder>,A2,treatment
-/scicore/projects/rinfsci/<you>/<your_experiment_folder>,B1,control
+/scicore/projects/rinfsci/<you>/<your_experiment_folder>,A12,control
+/scicore/projects/rinfsci/<you>/<your_experiment_folder>,B3,treatment
 ```
+
+(All four rows point at the *same* `experiment_path` — only `position`
+changes row to row. If you're checking wells across more than one
+experiment, just repeat the pattern with a different `experiment_path`
+value for that experiment's own rows.)
 
 - `experiment_path` and `position` are required; any extra columns (e.g. a
   human-readable `condition`) are carried through untouched into the
-  results sidecar.
+  results sidecar, and shown/used to label movies in the report instead of
+  their full file paths.
 - The movie file is found by searching under `experiment_path` for a file
-  whose name contains `position` — no fixed naming convention is assumed,
-  so this works across different acquisition layouts. If that match is
-  ambiguous (more than one file) or missing, the row is flagged rather than
-  guessed at.
+  whose name contains `position` — no fixed naming convention is assumed
+  beyond that, so this works across different acquisition layouts (a plain
+  well label like `A12` is the common case, but any unique substring
+  works). If that match is ambiguous (more than one file) or missing, the
+  row is flagged rather than guessed at.
 - Any **uncompressed** format works: `.nd2`, `.ome.tiff`/`.ome.tif`, plain
   `.tiff`/`.tif`. JetRaw-compressed `.ome.p.tiff`/`.p.tif` files are
   rejected with a pointer to decompress first (see BacNets'
@@ -261,6 +276,14 @@ single-channel movies):
   segmentation-free contrast proxy; near 1 means no bright signal stands
   out above background at all, well above 1 means real dynamic range
   exists for PI+ cells to be distinguishable.
+- **p95** (95th-percentile intensity) — a direct brightness percentile,
+  less sensitive to a handful of hot/dead pixels than a true max, and less
+  sensitive to overall exposure than mean intensity.
+- **SNR** ((Otsu-foreground mean − Otsu-background mean) / Otsu-background
+  std) — a standard microscopy signal-to-noise definition, distinct from
+  signal ratio: this one is background-noise-aware, so it also flags a
+  channel with fine dynamic range but too much background noise to
+  actually segment PI+ cells from.
 - **positive fraction** — rough Otsu-threshold coverage on this channel,
   analogous to BF's foreground fraction; not a real PI+ classification.
 

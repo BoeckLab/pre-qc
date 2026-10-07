@@ -26,7 +26,39 @@ def _movie_label(path: str) -> str:
     return Path(path).name
 
 
-def _comparison_figure(per_movie: dict):
+def _display_label(record: dict) -> str:
+    """"A12 (control)" instead of the full resolved file path -- position
+    plus any "condition"-like column (carried through from the input CSV)
+    is what a reviewer actually recognizes at a glance, not a long sciCORE
+    path. Falls back to the filename if even position is missing."""
+    position = record.get("position") or ""
+    condition = record.get("condition")
+    if position and condition:
+        return f"{position} ({condition})"
+    if position:
+        return position
+    return _movie_label(record.get("resolved_path", ""))
+
+
+_BF_SPECS = [
+    ("bf_sharpness", "BF sharpness (Laplacian var)", None),
+    ("bf_mean_intensity", "BF mean intensity", None),
+    ("drift_px", "BF cumulative drift (px)", None),
+    ("bf_foreground_frac", "BF foreground fraction", (0, 1)),
+]
+# Two rows of 4 -- the 2 unused slots in the second row are hidden rather
+# than left as blank-but-visible empty axes.
+_PI_SPECS = [
+    ("pi_mean_intensity", "PI mean intensity", None),
+    ("pi_signal_ratio", "PI signal ratio (p99/median)", None),
+    ("pi_p95", "PI p95 intensity", None),
+    ("pi_snr", "PI SNR (Otsu fg/bg)", None),
+    ("pi_positive_frac", "PI positive fraction", (0, 1)),
+    ("pi_saturation_frac", "PI saturation fraction", (0, 1)),
+]
+
+
+def _comparison_figure(per_movie: dict, labels_by_path: dict):
     """One figure, one subplot per metric, every movie's full per-frame
     curve overlaid in its own color on that subplot -- lets you directly
     compare e.g. "did movie B drift more than movie A", not just their
@@ -34,18 +66,12 @@ def _comparison_figure(per_movie: dict):
     view)."""
     movies = list(per_movie.items())  # [(resolved_path, MovieMetrics), ...]
     has_pi = any(m.pi_mean_intensity is not None for _, m in movies)
-    n_rows = 2 if has_pi else 1
+    n_rows = 3 if has_pi else 1
     fig, axes = plt.subplots(n_rows, 4, figsize=(16, 3.2 * n_rows), squeeze=False)
 
-    bf_specs = [
-        ("bf_sharpness", "BF sharpness (Laplacian var)", None),
-        ("bf_mean_intensity", "BF mean intensity", None),
-        ("drift_px", "BF cumulative drift (px)", None),
-        ("bf_foreground_frac", "BF foreground fraction", (0, 1)),
-    ]
-    for ax, (attr, title, ylim) in zip(axes[0], bf_specs):
+    for ax, (attr, title, ylim) in zip(axes[0], _BF_SPECS):
         for path, metrics in movies:
-            ax.plot(getattr(metrics, attr), label=_movie_label(path))
+            ax.plot(getattr(metrics, attr), label=labels_by_path.get(path, _movie_label(path)))
         ax.set_title(title, fontsize=8)
         ax.set_xlabel("frame", fontsize=7)
         ax.tick_params(labelsize=7)
@@ -53,69 +79,69 @@ def _comparison_figure(per_movie: dict):
             ax.set_ylim(*ylim)
 
     if has_pi:
-        pi_specs = [
-            ("pi_mean_intensity", "PI mean intensity", None),
-            ("pi_signal_ratio", "PI signal ratio (p99/median)", None),
-            ("pi_positive_frac", "PI positive fraction", (0, 1)),
-        ]
-        for ax, (attr, title, ylim) in zip(axes[1][:3], pi_specs):
+        pi_axes = list(axes[1]) + list(axes[2])
+        for ax, (attr, title, ylim) in zip(pi_axes, _PI_SPECS):
             for path, metrics in movies:
-                values = getattr(metrics, attr)
+                if attr == "pi_saturation_frac":
+                    values = metrics.saturation_frac[:, 1] if metrics.saturation_frac.shape[1] > 1 else None
+                else:
+                    values = getattr(metrics, attr)
                 if values is not None:
-                    ax.plot(values, label=_movie_label(path))
+                    ax.plot(values, label=labels_by_path.get(path, _movie_label(path)))
             ax.set_title(title, fontsize=8)
             ax.set_xlabel("frame", fontsize=7)
             ax.tick_params(labelsize=7)
             if ylim:
                 ax.set_ylim(*ylim)
-
-        ax = axes[1][3]
-        for path, metrics in movies:
-            if metrics.saturation_frac.shape[1] > 1:
-                ax.plot(metrics.saturation_frac[:, 1], label=_movie_label(path))
-        ax.set_ylim(0, 1)
-        ax.set_title("PI saturation fraction", fontsize=8)
-        ax.set_xlabel("frame", fontsize=7)
-        ax.tick_params(labelsize=7)
+        for ax in pi_axes[len(_PI_SPECS):]:
+            ax.axis("off")
 
     # One shared legend (every subplot has the same set of movie lines/
-    # colors) rather than repeating it in each of up to 8 subplots.
+    # colors) rather than repeating it in each of up to 12 subplots.
     handles, labels = axes[0][0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 1.08 if has_pi else 1.12),
+    fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 1.0 + 0.02 * n_rows),
                ncol=min(len(labels), 6), fontsize=7)
-    fig.tight_layout(rect=[0, 0, 1, 0.92 if has_pi else 0.88])
+    fig.tight_layout(rect=[0, 0, 1, 1.0 - 0.03 * n_rows])
     return fig
 
 
+_BF_SUMMARY_SPECS = [
+    ("bf_sharpness_median", "median BF sharpness", None),
+    ("bf_contrast_median", "median BF contrast", None),
+    ("drift_cumulative_px", "BF cumulative drift (px)", None),
+    ("bf_foreground_frac_median", "median BF foreground fraction", (0, 1)),
+]
+_PI_SUMMARY_SPECS = [
+    ("pi_mean_intensity_median", "median PI mean intensity", None),
+    ("pi_signal_ratio_median", "median PI signal ratio", None),
+    ("pi_p95_median", "median PI p95 intensity", None),
+    ("pi_snr_median", "median PI SNR (Otsu fg/bg)", None),
+    ("pi_positive_frac_median", "median PI positive fraction", (0, 1)),
+    ("saturation_max_frac", "max saturation (any channel)", (0, 1)),
+]
+
+
 def _cross_movie_figure(summary_df: pd.DataFrame):
-    labels = [_movie_label(p) for p in summary_df["resolved_path"]]
+    labels = [_display_label(r) for r in summary_df.to_dict("records")]
     has_pi = summary_df["pi_mean_intensity_median"].notna().any()
-    n_rows = 2 if has_pi else 1
+    n_rows = 3 if has_pi else 1
     fig, axes = plt.subplots(n_rows, 4, figsize=(15, 3.2 * n_rows), squeeze=False)
 
-    bf_row = axes[0]
-    bf_row[0].barh(labels, summary_df["bf_sharpness_median"])
-    bf_row[0].set_title("median BF sharpness", fontsize=8)
-    bf_row[1].barh(labels, summary_df["bf_contrast_median"])
-    bf_row[1].set_title("median BF contrast", fontsize=8)
-    bf_row[2].barh(labels, summary_df["drift_cumulative_px"])
-    bf_row[2].set_title("BF cumulative drift (px)", fontsize=8)
-    bf_row[3].barh(labels, summary_df["bf_foreground_frac_median"])
-    bf_row[3].set_xlim(0, 1)
-    bf_row[3].set_title("median BF foreground fraction", fontsize=8)
+    for ax, (column, title, xlim) in zip(axes[0], _BF_SUMMARY_SPECS):
+        ax.barh(labels, summary_df[column])
+        ax.set_title(title, fontsize=8)
+        if xlim:
+            ax.set_xlim(*xlim)
 
     if has_pi:
-        pi_row = axes[1]
-        pi_row[0].barh(labels, summary_df["pi_mean_intensity_median"])
-        pi_row[0].set_title("median PI mean intensity", fontsize=8)
-        pi_row[1].barh(labels, summary_df["pi_signal_ratio_median"])
-        pi_row[1].set_title("median PI signal ratio", fontsize=8)
-        pi_row[2].barh(labels, summary_df["pi_positive_frac_median"])
-        pi_row[2].set_xlim(0, 1)
-        pi_row[2].set_title("median PI positive fraction", fontsize=8)
-        pi_row[3].barh(labels, summary_df["saturation_max_frac"])
-        pi_row[3].set_xlim(0, 1)
-        pi_row[3].set_title("max saturation (any channel)", fontsize=8)
+        pi_axes = list(axes[1]) + list(axes[2])
+        for ax, (column, title, xlim) in zip(pi_axes, _PI_SUMMARY_SPECS):
+            ax.barh(labels, summary_df[column])
+            ax.set_title(title, fontsize=8)
+            if xlim:
+                ax.set_xlim(*xlim)
+        for ax in pi_axes[len(_PI_SUMMARY_SPECS):]:
+            ax.axis("off")
 
     for row in axes:
         for ax in row:
@@ -138,7 +164,8 @@ def write_html_report(summary_df: pd.DataFrame, per_movie: dict, out_path) -> Pa
         )
 
     if per_movie:
-        comparison_fig_b64 = _fig_to_base64(_comparison_figure(per_movie))
+        labels_by_path = {r["resolved_path"]: _display_label(r) for r in ok.to_dict("records")}
+        comparison_fig_b64 = _fig_to_base64(_comparison_figure(per_movie, labels_by_path))
         sections.append(
             "<h2>Across movies — full per-frame curves</h2>"
             "<p>Each color is one movie -- see the legend above the plots.</p>"
@@ -157,8 +184,10 @@ def write_html_report(summary_df: pd.DataFrame, per_movie: dict, out_path) -> Pa
             f"{rows_html}</table>"
         )
 
-    table_columns = [
-        "position",
+    table_columns = ["position"]
+    if not ok.empty and "condition" in ok.columns:
+        table_columns.append("condition")
+    table_columns += [
         "n_frames",
         "n_channels",
         "bf_sharpness_median",
@@ -170,7 +199,13 @@ def write_html_report(summary_df: pd.DataFrame, per_movie: dict, out_path) -> Pa
         "saturation_max_frac",
     ]
     if not ok.empty and ok["pi_mean_intensity_median"].notna().any():
-        table_columns += ["pi_mean_intensity_median", "pi_signal_ratio_median", "pi_positive_frac_median"]
+        table_columns += [
+            "pi_mean_intensity_median",
+            "pi_signal_ratio_median",
+            "pi_p95_median",
+            "pi_snr_median",
+            "pi_positive_frac_median",
+        ]
     table_html = ok[table_columns].to_html(index=False) if not ok.empty else "<p>No successfully analyzed movies.</p>"
 
     html = f"""<!DOCTYPE html>
