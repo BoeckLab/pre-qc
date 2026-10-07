@@ -10,6 +10,8 @@ fluorescence) gets caught before GPU hours are spent on unusable data.
 Sibling tool `../post-qc` (not built yet) will cover the opposite end:
 classifying movies as analyzable/discardable *after* a pipeline run.
 
+![How pre-qc works](src/pre_qc/assets/qc-workflow.png)
+
 ## Install (macOS — click-through app)
 
 Requires **Python 3.10+** (napari doesn't support older). If your default
