@@ -173,11 +173,16 @@ See BacNets' `ONBOARDING_JETRAW.md` for setup details, then bring the plain
 
 ## Input CSV
 
-One row per well/position to check:
+One row per well/position to check. Copy
+[`templates/wells_to_check_template.csv`](templates/wells_to_check_template.csv)
+and fill in your own paths/positions rather than writing one from scratch:
 
-| experiment_path | position | ... |
-|---|---|---|
-| /scicore/.../experiment_042 | A1 | ... |
+```csv
+experiment_path,position,condition
+/scicore/projects/rinfsci/<you>/<your_experiment_folder>,A1,control
+/scicore/projects/rinfsci/<you>/<your_experiment_folder>,A2,treatment
+/scicore/projects/rinfsci/<you>/<your_experiment_folder>,B1,control
+```
 
 - `experiment_path` and `position` are required; any extra columns (e.g. a
   human-readable `condition`) are carried through untouched into the
@@ -222,6 +227,10 @@ This opens napari with a **QC review** dock:
    plot — every movie's full per-frame curve overlaid in its own color on
    the same axes (not just a medians bar chart), so you can directly see
    e.g. which movie drifted more or lost focus earlier than the others.
+
+A **Tutorial** button (always visible, next to Check for Updates) opens this
+README on GitHub in your browser — the same place a colleague you've shared
+the repo link with would land.
 
 ## What "analyzability" means here
 
@@ -281,12 +290,14 @@ pre-qc/
 ├── README.md
 ├── scripts/
 │   └── install.sh   # macOS one-time: clone/venv/pip install -e . + generates /Applications/QC.app
+├── templates/
+│   └── wells_to_check_template.csv  # copy + fill in -- see "Input CSV"
 ├── src/pre_qc/
 │   ├── io.py        # uncompressed-movie loading (nd2 + tiff/ome-tiff), path resolution
 │   ├── manifest.py  # CSV manifest, crash-safe good/bad progress tracking
-│   ├── metrics.py   # sharpness/drift/saturation/foreground-fraction proxies
-│   ├── report.py    # static HTML + CSV report (matplotlib plots, base64-embedded)
-│   ├── widget.py     # napari dock widget: scroll, mark good/bad, Finish, Check for Updates
+│   ├── metrics.py   # per-channel (BF/PI) sharpness/drift/saturation/intensity/signal-ratio proxies
+│   ├── report.py    # static HTML + CSV report (matplotlib plots, base64-embedded, auto-opened)
+│   ├── widget.py     # napari dock widget: scroll, mark good/bad, Finish, Tutorial, Check for Updates
 │   ├── updater.py   # git fetch/pull + pip reinstall, backing the update button
 │   ├── app.py       # CLI entry point (`pre-qc <csv>`)
 │   └── assets/

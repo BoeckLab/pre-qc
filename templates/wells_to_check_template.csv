@@ -1,0 +1,4 @@
+experiment_path,position,condition
+/scicore/projects/rinfsci/<you>/<your_experiment_folder>,A1,control
+/scicore/projects/rinfsci/<you>/<your_experiment_folder>,A2,treatment
+/scicore/projects/rinfsci/<you>/<your_experiment_folder>,B1,control

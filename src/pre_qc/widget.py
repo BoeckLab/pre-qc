@@ -19,7 +19,8 @@ call returns.
 import webbrowser
 from pathlib import Path
 
-from qtpy.QtCore import QObject, Qt, QThread, QTimer, Signal
+from qtpy.QtCore import QObject, Qt, QThread, QTimer, QUrl, Signal
+from qtpy.QtGui import QDesktopServices
 from qtpy.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
@@ -34,6 +35,11 @@ from qtpy.QtWidgets import (
 
 from . import manifest, updater
 from .io import load_any_movie
+
+# Opens on GitHub rather than rendering in-app -- same call cell-slate's own
+# help_widget.py makes: an embedded QTextBrowser chokes on a README with
+# tables/images, and GitHub already renders this natively.
+_README_URL = "https://github.com/BoeckLab/pre-qc/blob/main/README.md"
 from .metrics import compute_batch_metrics
 from .report import write_html_report
 
@@ -168,9 +174,13 @@ class QCWidget(QWidget):
         return box
 
     def _build_update_box(self) -> QGroupBox:
-        box = QGroupBox("Updates")
+        box = QGroupBox("Help & updates")
         hbox = QHBoxLayout()
         box.setLayout(hbox)
+
+        tutorial_btn = QPushButton("Tutorial")
+        tutorial_btn.clicked.connect(self._on_tutorial_clicked)
+        hbox.addWidget(tutorial_btn)
 
         self.update_btn = QPushButton("Check for Updates")
         self.update_btn.clicked.connect(self._on_check_for_updates)
@@ -181,6 +191,9 @@ class QCWidget(QWidget):
         hbox.addStretch()
 
         return box
+
+    def _on_tutorial_clicked(self) -> None:
+        QDesktopServices.openUrl(QUrl(_README_URL))
 
     def _on_check_for_updates(self) -> None:
         # A plain git fetch/rev-parse is quick (seconds) and bounded, so
