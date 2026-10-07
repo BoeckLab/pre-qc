@@ -3,6 +3,28 @@ widget."""
 
 import argparse
 import sys
+from pathlib import Path
+
+# napari/Qt sets its own default app icon (the napari logo) on the running
+# process's Dock tile as soon as the QApplication is created -- this
+# overrides whatever icon the macOS .app bundle's Info.plist declared at
+# launch (see scripts/install.sh's launcher, which `exec`s straight into
+# this console script). Explicitly re-setting it after napari starts is
+# what makes the QC icon actually stick instead of flipping to napari's.
+_ICON_PATH = Path(__file__).resolve().parent / "assets" / "qc_icon.png"
+
+
+def _apply_app_icon(main_window) -> None:
+    if not _ICON_PATH.exists():
+        return
+    from qtpy.QtGui import QIcon
+    from qtpy.QtWidgets import QApplication
+
+    icon = QIcon(str(_ICON_PATH))
+    main_window.setWindowIcon(icon)
+    app = QApplication.instance()
+    if app is not None:
+        app.setWindowIcon(icon)
 
 
 def main(argv=None) -> None:
@@ -39,7 +61,8 @@ def main(argv=None) -> None:
 
     viewer = napari.Viewer(title="pre-qc review")
     widget = QCWidget(viewer, args.csv, rows)
-    viewer.window.add_dock_widget(widget, name="QC review", area="right")
+    dock = viewer.window.add_dock_widget(widget, name="QC review", area="right")
+    _apply_app_icon(dock.window())
     napari.run()
 
 
