@@ -18,12 +18,13 @@ call returns.
 
 from pathlib import Path
 
-from qtpy.QtCore import QObject, QThread, Signal
+from qtpy.QtCore import QObject, Qt, QThread, Signal
 from qtpy.QtWidgets import (
     QGroupBox,
     QLabel,
     QLineEdit,
     QMessageBox,
+    QProgressDialog,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -67,6 +68,7 @@ class QCWidget(QWidget):
         self._load_thread = None
         self._load_worker = None
         self._load_token = 0  # guards against a stale load finishing after Next/Prev moved on
+        self._loading_dialog = None
 
         layout = QVBoxLayout()
         self.setLayout(layout)
@@ -154,6 +156,7 @@ class QCWidget(QWidget):
         token = self._load_token
         self._set_controls_enabled(False)
         self.path_label.setText(f"loading {row.resolved_path} ...")
+        self._show_loading_dialog(row.resolved_path)
 
         thread = QThread(self)
         worker = _MovieLoadWorker(row.resolved_path, token)
@@ -177,9 +180,29 @@ class QCWidget(QWidget):
         self._load_worker = worker
         thread.start()
 
+    def _show_loading_dialog(self, path: str) -> None:
+        # Indeterminate (min == max == 0) -- there's no byte-level progress
+        # to report, just "still working". No cancel button: cancelling a
+        # load mid-read isn't supported, so offering one would be a dead
+        # end. Parented to the top-level window (not `self`, which is just
+        # the side dock) so it actually centers over the napari canvas.
+        dialog = QProgressDialog(f"Loading movie:\n{path}", None, 0, 0, self.window())
+        dialog.setWindowTitle("pre-qc")
+        dialog.setWindowModality(Qt.WindowModal)
+        dialog.setMinimumDuration(0)
+        dialog.setCancelButton(None)
+        dialog.show()
+        self._loading_dialog = dialog
+
+    def _close_loading_dialog(self) -> None:
+        if self._loading_dialog is not None:
+            self._loading_dialog.close()
+            self._loading_dialog = None
+
     def _on_movie_loaded(self, token: int, movie, error) -> None:
         if token != self._load_token:
             return  # user already navigated away (Next/Prev) -- discard this stale result
+        self._close_loading_dialog()
         self._set_controls_enabled(True)
         row = self._current_row()
         if error is not None:

@@ -19,7 +19,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Image Processing",
 ]
 dependencies = [
-    "napari[pyqt5]>=0.5",
+    "napari[pyqt6]>=0.5",
     "magicgui>=0.8",
     "tifffile>=2024.1.30",
     "imagecodecs>=2024.1.1",

@@ -8,22 +8,26 @@
 #
 # It clones/updates ~/pre-qc, builds an isolated venv, installs the
 # package into it, and generates /Applications/QC.app -- a single shared
-# launcher icon for the whole qc/ suite (pre-qc now, post-qc once it
-# exists at ~/post-qc with its own venv -- the launcher below checks for
-# that and only shows a picker once there's actually a second tool
-# installed). It asks (via a native file picker) which CSV to review,
-# then `exec`s the `pre-qc` console script in place of the launcher
-# process itself -- not spawned in a separate Terminal window -- so the
-# running app keeps the bundle's identity/Dock icon throughout, the same
-# way cell-slate's own launcher does. (An earlier version of this script
-# ran the command via `osascript ... tell application "Terminal"`,
-# which spawned a second, Terminal-owned process with its own generic
-# icon alongside the launcher's -- fixed because it looked like two
-# different things were opening.) After this, open it from /Applications
-# or the Dock like any other app -- no `python`/venv activation needed
-# again for routine use. This script is only for the very first install,
-# or to rebuild the launcher app if it's ever deleted; re-run it (or `cd
-# ~/pre-qc && git pull && pip install -e .`) to pick up updates.
+# launcher icon for the whole qc/ suite. The launcher does nothing but
+# `exec` straight into the `pre-qc` console script -- no Terminal window,
+# no interactive AppleScript dialog, no second process -- so the running
+# app keeps the bundle's identity/Dock icon throughout, the same way
+# cell-slate's own launcher does. (Two earlier versions of this script
+# got this wrong: first by running the command via `osascript ... tell
+# application "Terminal"`, which spawned a second, Terminal-owned
+# process with its own generic icon; then by asking which CSV to review
+# via an `osascript choose file` dialog run from this bash launcher
+# *before* the exec -- that interactive step itself was enough to
+# disrupt macOS's bundle/process association, causing a differently-
+# iconed Dock entry right as the dialog closed and napari started. The
+# CSV picker now lives inside pre_qc/app.py itself, as a native Qt file
+# dialog shown from the already-running, already-correctly-iconed Qt
+# process -- see that file's _prompt_for_csv.) After this, open it from
+# /Applications or the Dock like any other app -- no `python`/venv
+# activation needed again for routine use. This script is only for the
+# very first install, or to rebuild the launcher app if it's ever
+# deleted; re-run it (or `cd ~/pre-qc && git pull && pip install -e .`)
+# to pick up updates.
 set -euo pipefail
 
 REPO_URL="git@github.com:BoeckLab/pre-qc.git"
@@ -71,38 +75,14 @@ if [ -f "$SRC_PNG" ]; then
     ICON_KEY="<key>CFBundleIconFile</key><string>qc.icns</string>"
 fi
 
-# The launcher picks a tool first (only if post-qc is actually installed
-# alongside pre-qc -- otherwise it skips straight to pre-qc, since a
-# picker with one real option and one "not installed" option is just
-# friction), asks which CSV to review via a native file-picker dialog,
-# then `exec`s straight into the console script -- no Terminal window,
-# no second process. Startup warnings that used to print to that
-# Terminal (e.g. CSV rows that couldn't be resolved to a file) are
-# already surfaced inside the GUI itself (QCWidget shows each
-# unresolved row's error inline, and warns again before Finish runs), so
-# nothing is lost by dropping the Terminal step.
+# No interactive step at all before the exec -- see the long comment
+# above for why. Once post-qc exists, picking between the two tools
+# should happen the same way the CSV picker does: as a dialog shown from
+# inside whichever Qt process starts first, not from this bash launcher.
 cat > "$APP_DIR/Contents/MacOS/launcher" <<'LAUNCHER'
 #!/bin/bash
-TOOL="pre-qc"
-if [ -d "$HOME/post-qc/.venv" ]; then
-    CHOICE=$(osascript -e 'choose from list {"Pre-QC (before pipeline)", "Post-QC (after pipeline)"} with prompt "Which QC step?" without multiple selections allowed') || exit 0
-    [ "$CHOICE" = "false" ] && exit 0
-    case "$CHOICE" in
-        "Post-QC"*) TOOL="post-qc" ;;
-        *) TOOL="pre-qc" ;;
-    esac
-fi
-
-CSV_PATH=$(osascript -e 'POSIX path of (choose file with prompt "Select the QC input CSV (experiment_path, position columns):" of type {"csv"})') || exit 0
-
-if [ "$TOOL" = "post-qc" ]; then
-    VENV="$HOME/post-qc/.venv"
-else
-    VENV="$HOME/pre-qc/.venv"
-fi
-
-source "$VENV/bin/activate"
-exec "$TOOL" "$CSV_PATH"
+source "$HOME/pre-qc/.venv/bin/activate"
+exec pre-qc
 LAUNCHER
 chmod +x "$APP_DIR/Contents/MacOS/launcher"
 

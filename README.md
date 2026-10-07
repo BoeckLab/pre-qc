@@ -37,16 +37,23 @@ This clones (or updates) `~/pre-qc`, builds an isolated venv there, and
 installs **QC.app** into `/Applications` — one shared app identity/icon for
 the whole qc/ suite (pre-qc now; post-qc once it exists at `~/post-qc`,
 at which point the same app picks between them). It's a thin launcher
-(not a frozen binary) that asks which CSV to review (native file picker),
-then runs `pre-qc` directly in place of itself — no separate Terminal
-window, so there's only ever one icon/process for the whole thing, the
-same way cell-slate's own launcher works. After this, **open it from
-`/Applications` or the Dock** like any other app — no Terminal needed again
-for routine use (right-click its Dock icon → **Options** → **Keep in
+(not a frozen binary) that does nothing but run `pre-qc` directly in place
+of itself — no separate Terminal window, no interactive step before that
+handoff — so there's only ever one icon/process for the whole thing, the
+same way cell-slate's own launcher works; `pre-qc` itself asks which CSV to
+review via a native file dialog once napari is already up. After this,
+**open it from `/Applications` or the Dock** like any other app — no
+Terminal needed again for routine use (right-click its Dock icon →
+**Options** → **Keep in
 Dock** to pin it).
 
 To pick up updates later: re-run `bash scripts/install.sh`, or `cd
 ~/pre-qc && git pull && source .venv/bin/activate && pip install -e .`.
+
+**If you installed before the switch from PyQt5 to PyQt6** (napari is
+deprecating PyQt5 support), `pip install -e .` alone won't remove the old
+PyQt5 install from an existing venv — delete and rebuild it instead:
+`rm -rf ~/pre-qc/.venv && bash scripts/install.sh`.
 
 ## Install (terminal — Linux/other, or macOS without the click-through app)
 
@@ -193,10 +200,16 @@ One row per well/position to check:
 pre-qc wells_to_check.csv
 ```
 
+The CSV argument is optional — run `pre-qc` with no argument (which is what
+**QC.app** does) and it opens napari first, then asks for the CSV via a
+native file dialog from inside that already-running window.
+
 This opens napari with a **QC review** dock:
 
 1. Scroll frames with napari's own slider (channels show as separate,
-   additively-blended layers).
+   additively-blended layers). A movie can take a while to load, especially
+   over a network mount — a "Loading movie: ‹path›" popup stays up the
+   whole time so it's clear the app is still working, not stuck.
 2. Mark the current movie **GOOD** (key `g`) or **BAD** (key `b`) — this
    saves immediately to `<input>_qc_results.csv` and auto-advances to the
    next unreviewed row. Quitting partway through and re-running on the same
