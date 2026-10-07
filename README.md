@@ -208,16 +208,41 @@ value for that experiment's own rows.)
 pre-qc only reads **uncompressed** movies. If any position in your CSV
 points at a JetRaw-compressed file (`.ome.p.tiff`/`.p.tif`), it can't be
 opened here — JetRaw needs a licensed SDK that's only set up on sciCORE,
-never on a laptop. Do this once, before launching the review, rather than
-discovering it row by row mid-review:
+never on a laptop. Run this pre-run check **on sciCORE** once your CSV is
+filled in, so compressed files get caught and fixed up front instead of one
+at a time mid-review:
 
-1. **Have your CSV ready** (see "Input CSV" above) so you know exactly
-   which experiment folder(s)/positions you're about to check.
-2. **On sciCORE**, decompress anything JetRaw-compressed in those folders:
+1. **Install and configure `jetraw-tools` once** (one-time per sciCORE
+   account — skip if already done): see BacNets' `ONBOARDING_JETRAW.md`
+   sections 1–2.
+
+2. **Check every row in your CSV, decompressing only what's actually
+   compressed** (leaves already-uncompressed files untouched, and tells you
+   exactly which rows are missing a file entirely):
    ```bash
-   jetraw-tools decompress <folder> --extension ".ome.p.tiff"
+   # on sciCORE, from any directory, with your jetraw-tools venv active
+   CSV=wells_to_check.csv
+   tail -n +2 "$CSV" | while IFS=',' read -r experiment_path position _; do
+     plain=$(find "$experiment_path" -iname "*${position}*" \
+       \( -iname "*.tif" -o -iname "*.tiff" -o -iname "*.nd2" \) 2>/dev/null \
+       | grep -v -E '\.p\.tiff?$')
+     if [ -n "$plain" ]; then
+       echo "OK (already uncompressed): $position"
+       continue
+     fi
+     compressed=$(find "$experiment_path" -iname "*${position}*" \
+       \( -iname "*.p.tiff" -o -iname "*.p.tif" \) 2>/dev/null)
+     if [ -z "$compressed" ]; then
+       echo "MISSING: no file found for $position under $experiment_path"
+       continue
+     fi
+     out="${compressed%.p.tiff}.tiff"
+     echo "Decompressing $position: $compressed -> $out"
+     python ~/scripts/decompress_jetraw.py "$compressed" "$out"
+   done
    ```
-   See BacNets' `ONBOARDING_JETRAW.md` for one-time SDK/config setup.
+   This loop is read-only for anything already uncompressed — rerunning it
+   is always safe, it just reports "OK" for rows that don't need work.
 3. **Bring the plain `.tiff`/`.nd2` output over** to wherever you'll run
    pre-qc (see "Accessing experiment data from sciCORE" above) — same
    folder layout, so your CSV's `experiment_path`/`position` still resolve.
