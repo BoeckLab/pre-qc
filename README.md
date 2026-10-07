@@ -1,5 +1,7 @@
 # pre-qc
 
+![pre-qc banner](src/pre_qc/assets/qc-banner.png)
+
 A small, standalone napari tool for new researchers to spot-check raw
 microscopy movies **before** running the full ASCT pipeline — so an
 acquisition problem (empty well, out-of-focus, drifting stage, saturated
