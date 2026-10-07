@@ -2,14 +2,6 @@
 
 ![pre-qc banner](src/pre_qc/assets/qc-banner.png)
 
-A small, standalone napari tool for new researchers to spot-check raw
-microscopy movies **before** running the full ASCT pipeline — so an
-acquisition problem (empty well, out-of-focus, drifting stage, saturated
-fluorescence) gets caught before GPU hours are spent on unusable data.
-
-Sibling tool `../post-qc` (not built yet) will cover the opposite end:
-classifying movies as analyzable/discardable *after* a pipeline run.
-
 ![How pre-qc works](src/pre_qc/assets/qc-workflow.png)
 
 ## Install (macOS — click-through app)
