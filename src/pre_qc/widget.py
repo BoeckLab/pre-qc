@@ -18,7 +18,7 @@ call returns.
 
 from pathlib import Path
 
-from qtpy.QtCore import QObject, Qt, QThread, Signal
+from qtpy.QtCore import QObject, Qt, QThread, QTimer, Signal
 from qtpy.QtWidgets import (
     QGroupBox,
     QLabel,
@@ -57,6 +57,32 @@ class _MovieLoadWorker(QObject):
             self.finished.emit(self.token, movie, None)
 
 
+class _ReportWorker(QObject):
+    # (html report path or None, error message or None). Same
+    # bound-method-only connection rule as _MovieLoadWorker -- see
+    # QCWidget._load_current's comment.
+    finished = Signal(object, object)
+
+    def __init__(self, rows, csv_path):
+        super().__init__()
+        self.rows = rows
+        self.csv_path = csv_path
+
+    def run(self) -> None:
+        try:
+            summary_df, per_movie = compute_batch_metrics(self.rows)
+            out_path = write_html_report(
+                summary_df, per_movie, self.csv_path.with_name(f"{self.csv_path.stem}_qc_report.html")
+            )
+            summary_df.to_csv(
+                self.csv_path.with_name(f"{self.csv_path.stem}_qc_metrics.csv"), index=False
+            )
+        except Exception as exc:  # noqa: BLE001 -- surfaced to the user, not swallowed
+            self.finished.emit(None, str(exc))
+        else:
+            self.finished.emit(str(out_path), None)
+
+
 class QCWidget(QWidget):
     def __init__(self, viewer, csv_path, rows, parent=None):
         super().__init__(parent)
@@ -69,6 +95,8 @@ class QCWidget(QWidget):
         self._load_worker = None
         self._load_token = 0  # guards against a stale load finishing after Next/Prev moved on
         self._loading_dialog = None
+        self._report_thread = None
+        self._report_worker = None
 
         layout = QVBoxLayout()
         self.setLayout(layout)
@@ -78,7 +106,17 @@ class QCWidget(QWidget):
         self.viewer.bind_key("g", lambda v: self._mark("good"), overwrite=True)
         self.viewer.bind_key("b", lambda v: self._mark("bad"), overwrite=True)
 
-        self._load_current()
+        # Deferred rather than called directly: at this point in __init__,
+        # the caller (app.py) hasn't embedded this widget into the main
+        # window yet (that happens via add_dock_widget right after
+        # construction) -- self.window() would still resolve to this
+        # widget itself as an orphan, never-shown top-level window, so the
+        # first movie's loading popup (parented via self.window() in
+        # _show_busy_dialog) would be created but never actually
+        # visible. Scheduling this for the next event-loop iteration
+        # instead means it runs after add_dock_widget has already given
+        # this widget a real parent window.
+        QTimer.singleShot(0, self._load_current)
 
     # ------------------------------------------------------------------
 
@@ -156,7 +194,7 @@ class QCWidget(QWidget):
         token = self._load_token
         self._set_controls_enabled(False)
         self.path_label.setText(f"loading {row.resolved_path} ...")
-        self._show_loading_dialog(row.resolved_path)
+        self._show_busy_dialog(f"Loading movie:\n{row.resolved_path}")
 
         thread = QThread(self)
         worker = _MovieLoadWorker(row.resolved_path, token)
@@ -180,13 +218,14 @@ class QCWidget(QWidget):
         self._load_worker = worker
         thread.start()
 
-    def _show_loading_dialog(self, path: str) -> None:
+    def _show_busy_dialog(self, message: str) -> None:
         # Indeterminate (min == max == 0) -- there's no byte-level progress
         # to report, just "still working". No cancel button: cancelling a
-        # load mid-read isn't supported, so offering one would be a dead
-        # end. Parented to the top-level window (not `self`, which is just
-        # the side dock) so it actually centers over the napari canvas.
-        dialog = QProgressDialog(f"Loading movie:\n{path}", None, 0, 0, self.window())
+        # load/report run mid-flight isn't supported, so offering one would
+        # be a dead end. Parented to the top-level window (not `self`,
+        # which is just the side dock) so it actually centers over the
+        # napari canvas.
+        dialog = QProgressDialog(message, None, 0, 0, self.window())
         dialog.setWindowTitle("pre-qc")
         dialog.setWindowModality(Qt.WindowModal)
         dialog.setMinimumDuration(0)
@@ -194,7 +233,7 @@ class QCWidget(QWidget):
         dialog.show()
         self._loading_dialog = dialog
 
-    def _close_loading_dialog(self) -> None:
+    def _close_busy_dialog(self) -> None:
         if self._loading_dialog is not None:
             self._loading_dialog.close()
             self._loading_dialog = None
@@ -202,7 +241,7 @@ class QCWidget(QWidget):
     def _on_movie_loaded(self, token: int, movie, error) -> None:
         if token != self._load_token:
             return  # user already navigated away (Next/Prev) -- discard this stale result
-        self._close_loading_dialog()
+        self._close_busy_dialog()
         self._set_controls_enabled(True)
         row = self._current_row()
         if error is not None:
@@ -291,13 +330,29 @@ class QCWidget(QWidget):
             if proceed != QMessageBox.Yes:
                 return
 
-        summary_df, per_movie = compute_batch_metrics(self.rows)
-        out_path = write_html_report(
-            summary_df, per_movie, self.csv_path.with_name(f"{self.csv_path.stem}_qc_report.html")
-        )
-        summary_df.to_csv(self.csv_path.with_name(f"{self.csv_path.stem}_qc_metrics.csv"), index=False)
+        self._n_good_for_report_message = summary["n_good"]
+        self._set_controls_enabled(False)
+        self._show_busy_dialog(f"Computing analyzability report for {summary['n_good']} movies...")
+
+        thread = QThread(self)
+        worker = _ReportWorker(self.rows, self.csv_path)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_report_finished)  # bound method, not a lambda -- see above
+        worker.finished.connect(thread.quit)
+        thread.finished.connect(thread.deleteLater)
+        self._report_thread = thread
+        self._report_worker = worker
+        thread.start()
+
+    def _on_report_finished(self, out_path, error) -> None:
+        self._close_busy_dialog()
+        self._set_controls_enabled(True)
+        if error is not None:
+            QMessageBox.critical(self, "Report failed", f"Could not compute the report:\n\n{error}")
+            return
         QMessageBox.information(
             self,
             "Report written",
-            f"All {summary['n_good']} movies marked good.\n\nReport: {out_path}",
+            f"All {self._n_good_for_report_message} movies marked good.\n\nReport: {out_path}",
         )
