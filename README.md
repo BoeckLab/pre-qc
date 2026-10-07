@@ -216,8 +216,12 @@ This opens napari with a **QC review** dock:
    CSV resumes from where you left off instead of restarting.
 3. Once every resolvable row is marked good, **Finish** computes cheap
    CPU-only analyzability metrics and writes `<input>_qc_report.html` +
-   `<input>_qc_metrics.csv`. If any row is still bad or unreviewed, Finish
-   refuses to run until that's resolved.
+   `<input>_qc_metrics.csv`, then opens the HTML report in your browser
+   automatically. If any row is still bad or unreviewed, Finish refuses to
+   run until that's resolved. The report includes a per-metric comparison
+   plot — every movie's full per-frame curve overlaid in its own color on
+   the same axes (not just a medians bar chart), so you can directly see
+   e.g. which movie drifted more or lost focus earlier than the others.
 
 ## What "analyzability" means here
 

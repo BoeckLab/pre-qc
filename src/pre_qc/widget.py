@@ -16,6 +16,7 @@ open at all, not just be slow, since nothing repaints until the blocking
 call returns.
 """
 
+import webbrowser
 from pathlib import Path
 
 from qtpy.QtCore import QObject, Qt, QThread, QTimer, Signal
@@ -351,8 +352,10 @@ class QCWidget(QWidget):
         if error is not None:
             QMessageBox.critical(self, "Report failed", f"Could not compute the report:\n\n{error}")
             return
+        webbrowser.open(Path(out_path).resolve().as_uri())
         QMessageBox.information(
             self,
             "Report written",
-            f"All {self._n_good_for_report_message} movies marked good.\n\nReport: {out_path}",
+            f"All {self._n_good_for_report_message} movies marked good.\n\n"
+            f"Report: {out_path}\n\n(opened in your browser)",
         )
