@@ -29,6 +29,36 @@ def _apply_app_icon() -> None:
         app.setWindowIcon(QIcon(str(_ICON_PATH)))
 
 
+# Every pre-qc movie is BF and/or PI -- 1 to 3 layers, never a long list --
+# so napari's own default (layer list gets all the leftover vertical space,
+# see napari's Window.__init__) wastes room that the QC checklist panel
+# below it could use instead.
+_LAYER_LIST_HEIGHT = 110
+
+
+def _shrink_layer_list(viewer, checklist_dock) -> None:
+    """Cap the native layer-list dock's height and let the checklist panel
+    (docked below it in the same left-hand column) take the rest. Mirrors
+    the resizeDocks call napari itself makes in Window.__init__ for
+    layer controls vs. layer list, just adding our checklist as the third,
+    space-absorbing widget."""
+    try:
+        from qtpy.QtCore import Qt as _Qt
+
+        qt_viewer = viewer.window._qt_viewer
+        qt_window = viewer.window._qt_window
+        controls = qt_viewer.dockLayerControls
+        layer_list = qt_viewer.dockLayerList
+    except AttributeError:
+        return
+
+    qt_window.resizeDocks(
+        [controls, layer_list, checklist_dock],
+        [controls.minimumHeight(), _LAYER_LIST_HEIGHT, 10000],
+        _Qt.Orientation.Vertical,
+    )
+
+
 def main(argv=None) -> None:
     parser = argparse.ArgumentParser(
         description=(
@@ -63,7 +93,10 @@ def main(argv=None) -> None:
     # already live (added automatically by napari.Viewer()) -- docking
     # here stacks this checklist below them in the same column, rather
     # than competing for space in the QC review dock on the right.
-    viewer.window.add_dock_widget(ChecklistWidget(), name="QC checklist", area="left")
+    checklist_dock = viewer.window.add_dock_widget(
+        ChecklistWidget(), name="QC checklist", area="left"
+    )
+    _shrink_layer_list(viewer, checklist_dock)
 
     csv_path = args.csv or _prompt_for_csv()
     if not csv_path:
