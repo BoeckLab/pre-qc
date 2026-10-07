@@ -22,6 +22,7 @@ from pathlib import Path
 from qtpy.QtCore import QObject, Qt, QThread, QTimer, Signal
 from qtpy.QtWidgets import (
     QGroupBox,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -31,7 +32,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from . import manifest
+from . import manifest, updater
 from .io import load_any_movie
 from .metrics import compute_batch_metrics
 from .report import write_html_report
@@ -102,6 +103,7 @@ class QCWidget(QWidget):
         layout = QVBoxLayout()
         self.setLayout(layout)
         layout.addWidget(self._build_box())
+        layout.addWidget(self._build_update_box())
         layout.addStretch()
 
         self.viewer.bind_key("g", lambda v: self._mark("good"), overwrite=True)
@@ -164,6 +166,62 @@ class QCWidget(QWidget):
         vbox.addWidget(self.finish_btn)
 
         return box
+
+    def _build_update_box(self) -> QGroupBox:
+        box = QGroupBox("Updates")
+        hbox = QHBoxLayout()
+        box.setLayout(hbox)
+
+        self.update_btn = QPushButton("Check for Updates")
+        self.update_btn.clicked.connect(self._on_check_for_updates)
+        hbox.addWidget(self.update_btn)
+
+        self.update_status_label = QLabel("")
+        hbox.addWidget(self.update_status_label)
+        hbox.addStretch()
+
+        return box
+
+    def _on_check_for_updates(self) -> None:
+        # A plain git fetch/rev-parse is quick (seconds) and bounded, so
+        # unlike movie loading/report computation this runs directly on
+        # the GUI thread rather than needing a background QThread -- just
+        # disable the button for the duration so a second click can't
+        # overlap it.
+        self.update_status_label.setText("Checking…")
+        self.update_btn.setEnabled(False)
+        try:
+            available = updater.check_for_update()
+        finally:
+            self.update_btn.setEnabled(True)
+
+        if not available:
+            self.update_status_label.setText("Up to date")
+            return
+
+        self.update_status_label.setText("Update available")
+        choice = QMessageBox.question(
+            self,
+            "Update available",
+            "A newer version of pre-qc is available on GitHub. Update now?\n\n"
+            "The app will close and reopen automatically. Any unsaved review "
+            "progress is already saved to disk continuously, so nothing is lost.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if choice != QMessageBox.Yes:
+            return
+
+        try:
+            updater.apply_update()
+        except updater.UpdateCheckFailed as exc:
+            QMessageBox.warning(self, "Update failed", str(exc))
+            return
+
+        updater.relaunch()
+        from qtpy.QtWidgets import QApplication
+
+        QApplication.instance().quit()
 
     # ------------------------------------------------------------------
 

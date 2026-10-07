@@ -262,6 +262,17 @@ single-channel movies):
 These are heuristic proxies for "will the real pipeline have something to
 work with", not a guarantee of downstream pipeline quality.
 
+## Keeping it up to date
+
+The **Check for Updates** button (always visible, below the main review
+controls) does a quick `git fetch` against GitHub and, if your install is
+behind, offers to update: `git pull --ff-only` + `pip install -e .` into the
+same venv, then automatically closes and reopens the app (`open -a "QC"`,
+so this only self-relaunches when installed via `scripts/install.sh`'s
+click-through app — a terminal-only install just needs to be re-run by
+hand after the pull). Any in-progress review is already saved continuously
+to the `_qc_results.csv` sidecar, so nothing is lost by the restart.
+
 ## Layout
 
 ```
@@ -275,7 +286,8 @@ pre-qc/
 │   ├── manifest.py  # CSV manifest, crash-safe good/bad progress tracking
 │   ├── metrics.py   # sharpness/drift/saturation/foreground-fraction proxies
 │   ├── report.py    # static HTML + CSV report (matplotlib plots, base64-embedded)
-│   ├── widget.py     # napari dock widget: scroll, mark good/bad, Finish
+│   ├── widget.py     # napari dock widget: scroll, mark good/bad, Finish, Check for Updates
+│   ├── updater.py   # git fetch/pull + pip reinstall, backing the update button
 │   ├── app.py       # CLI entry point (`pre-qc <csv>`)
 │   └── assets/
 │       └── qc_icon.png  # shared app icon -- same one post-qc will use
