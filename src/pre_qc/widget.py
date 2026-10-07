@@ -20,7 +20,7 @@ import webbrowser
 from pathlib import Path
 
 from qtpy.QtCore import QObject, Qt, QThread, QTimer, QUrl, Signal
-from qtpy.QtGui import QDesktopServices
+from qtpy.QtGui import QDesktopServices, QPixmap
 from qtpy.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
@@ -40,6 +40,26 @@ from .io import load_any_movie
 # help_widget.py makes: an embedded QTextBrowser chokes on a README with
 # tables/images, and GitHub already renders this natively.
 _README_URL = "https://github.com/BoeckLab/pre-qc/blob/main/README.md"
+
+_BANNER_PATH = Path(__file__).resolve().parent / "assets" / "qc-banner.png"
+_BANNER_WIDTH = 300
+
+
+def _build_banner():
+    """Top-of-dock banner image -- returns None (not an empty widget) if
+    the asset is missing, same convention as cell-slate's own
+    tools_widget._build_header, so a checkout without the binary asset
+    still runs instead of crashing on a missing file."""
+    if not _BANNER_PATH.exists():
+        return None
+    pixmap = QPixmap(str(_BANNER_PATH))
+    if pixmap.isNull():
+        return None
+    if pixmap.width() != _BANNER_WIDTH:
+        pixmap = pixmap.scaledToWidth(_BANNER_WIDTH, Qt.SmoothTransformation)
+    label = QLabel()
+    label.setPixmap(pixmap)
+    return label
 from .metrics import compute_batch_metrics
 from .report import write_html_report
 
@@ -108,6 +128,9 @@ class QCWidget(QWidget):
 
         layout = QVBoxLayout()
         self.setLayout(layout)
+        banner = _build_banner()
+        if banner is not None:
+            layout.addWidget(banner, alignment=Qt.AlignHCenter)
         layout.addWidget(self._build_box())
         layout.addWidget(self._build_update_box())
         layout.addStretch()

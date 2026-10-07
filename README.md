@@ -301,7 +301,8 @@ pre-qc/
 │   ├── updater.py   # git fetch/pull + pip reinstall, backing the update button
 │   ├── app.py       # CLI entry point (`pre-qc <csv>`)
 │   └── assets/
-│       └── qc_icon.png  # shared app icon -- same one post-qc will use
+│       ├── qc_icon.png    # shared app icon -- same one post-qc will use
+│       └── qc-banner.png  # top-of-dock banner inside the app
 └── tests/
     └── test_pre_qc.py  # io/manifest/metrics logic (no napari/Qt needed)
 ```
