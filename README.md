@@ -157,15 +157,8 @@ rsync -avP <username>@login-node.scicore.unibas.ch:/path/to/experiment_042/ ~/lo
 Then point `experiment_path` at `~/local_qc_data/experiment_042`.
 
 **JetRaw-compressed files (`.ome.p.tiff`) can't be opened by pre-qc at all**
-(see "Input CSV" below) — decompress them on sciCORE first:
-
-```bash
-# on sciCORE
-jetraw-tools decompress <folder> --extension ".ome.p.tiff"
-```
-
-See BacNets' `ONBOARDING_JETRAW.md` for setup details, then bring the plain
-`.tiff`/`.nd2` output over with one of A/B/C above.
+— see "Before you start: compressed files" below for the decompress-first
+workflow.
 
 ## Input CSV
 
@@ -209,6 +202,28 @@ value for that experiment's own rows.)
   `ONBOARDING_JETRAW.md`) — QC is meant to run on exactly what the
   pipeline will see, and JetRaw decoding needs a licensed SDK only set up
   on sciCORE.
+
+## Before you start: compressed files
+
+pre-qc only reads **uncompressed** movies. If any position in your CSV
+points at a JetRaw-compressed file (`.ome.p.tiff`/`.p.tif`), it can't be
+opened here — JetRaw needs a licensed SDK that's only set up on sciCORE,
+never on a laptop. Do this once, before launching the review, rather than
+discovering it row by row mid-review:
+
+1. **Have your CSV ready** (see "Input CSV" above) so you know exactly
+   which experiment folder(s)/positions you're about to check.
+2. **On sciCORE**, decompress anything JetRaw-compressed in those folders:
+   ```bash
+   jetraw-tools decompress <folder> --extension ".ome.p.tiff"
+   ```
+   See BacNets' `ONBOARDING_JETRAW.md` for one-time SDK/config setup.
+3. **Bring the plain `.tiff`/`.nd2` output over** to wherever you'll run
+   pre-qc (see "Accessing experiment data from sciCORE" above) — same
+   folder layout, so your CSV's `experiment_path`/`position` still resolve.
+4. **Then launch pre-qc.** If a row still can't be resolved (still
+   compressed, wrong path, ambiguous match), it's flagged in the terminal
+   and in the app rather than crashing the whole review.
 
 ## Run
 

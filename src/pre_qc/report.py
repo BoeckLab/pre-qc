@@ -40,21 +40,24 @@ def _display_label(record: dict) -> str:
     return _movie_label(record.get("resolved_path", ""))
 
 
+#  bf_foreground_frac and pi_saturation_frac are deliberately NOT plotted
+# per-frame here: within a single movie neither one varies meaningfully
+# frame-to-frame (confluency barely shifts; saturation should normally sit
+# at 0 and only matters as a rare spike), so their time curves are either
+# flat or empty -- a wasted subplot. Both are still genuinely useful
+# *across* movies as a single number, so they stay in the medians view
+# below (_BF_SUMMARY_SPECS / _PI_SUMMARY_SPECS) and in the results table.
 _BF_SPECS = [
     ("bf_sharpness", "BF sharpness (Laplacian var)", None),
     ("bf_mean_intensity", "BF mean intensity", None),
     ("drift_px", "BF cumulative drift (px)", None),
-    ("bf_foreground_frac", "BF foreground fraction", (0, 1)),
 ]
-# Two rows of 4 -- the 2 unused slots in the second row are hidden rather
-# than left as blank-but-visible empty axes.
 _PI_SPECS = [
     ("pi_mean_intensity", "PI mean intensity", None),
     ("pi_signal_ratio", "PI signal ratio (p99/median)", None),
     ("pi_p95", "PI p95 intensity", None),
     ("pi_snr", "PI SNR (Otsu fg/bg)", None),
     ("pi_positive_frac", "PI positive fraction", (0, 1)),
-    ("pi_saturation_frac", "PI saturation fraction", (0, 1)),
 ]
 
 
@@ -77,15 +80,14 @@ def _comparison_figure(per_movie: dict, labels_by_path: dict):
         ax.tick_params(labelsize=7)
         if ylim:
             ax.set_ylim(*ylim)
+    for ax in axes[0][len(_BF_SPECS):]:
+        ax.axis("off")
 
     if has_pi:
         pi_axes = list(axes[1]) + list(axes[2])
         for ax, (attr, title, ylim) in zip(pi_axes, _PI_SPECS):
             for path, metrics in movies:
-                if attr == "pi_saturation_frac":
-                    values = metrics.saturation_frac[:, 1] if metrics.saturation_frac.shape[1] > 1 else None
-                else:
-                    values = getattr(metrics, attr)
+                values = getattr(metrics, attr)
                 if values is not None:
                     ax.plot(values, label=labels_by_path.get(path, _movie_label(path)))
             ax.set_title(title, fontsize=8)
