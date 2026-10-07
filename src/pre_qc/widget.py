@@ -34,6 +34,7 @@ from qtpy.QtWidgets import (
 )
 
 from . import manifest, updater
+from .checklist import CHECKLIST_ITEMS
 from .io import load_any_movie
 
 # Opens on GitHub rather than rendering in-app -- same call cell-slate's own
@@ -453,3 +454,28 @@ class QCWidget(QWidget):
             f"All {self._n_good_for_report_message} movies marked good.\n\n"
             f"Report: {out_path}\n\n(opened in your browser)",
         )
+
+
+class ChecklistWidget(QWidget):
+    """Read-only reference list of what to look for when deciding
+    good/bad -- docked on the left, below napari's own layer
+    controls/layer list panels (see app.py). Plain data, not editable
+    in-app: see checklist.py to update the list itself once colleague
+    feedback comes in."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+
+        box = QGroupBox("What to check for")
+        box_layout = QVBoxLayout()
+        box.setLayout(box_layout)
+
+        bullet_text = "\n".join(f"• {item}" for item in CHECKLIST_ITEMS)
+        label = QLabel(bullet_text)
+        label.setWordWrap(True)
+        box_layout.addWidget(label)
+
+        layout.addWidget(box)
+        layout.addStretch()

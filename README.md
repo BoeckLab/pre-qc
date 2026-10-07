@@ -247,6 +247,12 @@ A **Tutorial** button (always visible, next to Check for Updates) opens this
 README on GitHub in your browser — the same place a colleague you've shared
 the repo link with would land.
 
+A **QC checklist** panel sits on the left, below napari's own layer
+controls/layer list — a reference list of what to actually look for when
+deciding good vs. bad (focus, drift, PI signal, saturation, artifacts).
+It's read-only in the app; see `checklist.py` to edit the list itself as
+colleague feedback comes in.
+
 ## What "analyzability" means here
 
 Deliberately **not** a run of the real segmentation model — that would
@@ -320,7 +326,8 @@ pre-qc/
 │   ├── manifest.py  # CSV manifest, crash-safe good/bad progress tracking
 │   ├── metrics.py   # per-channel (BF/PI) sharpness/drift/saturation/intensity/signal-ratio proxies
 │   ├── report.py    # static HTML + CSV report (matplotlib plots, base64-embedded, auto-opened)
-│   ├── widget.py     # napari dock widget: scroll, mark good/bad, Finish, Tutorial, Check for Updates
+│   ├── widget.py     # napari dock widgets: QC review (scroll/mark/Finish/Tutorial/Updates) + checklist
+│   ├── checklist.py # plain-data list of good/bad review criteria shown in the checklist panel
 │   ├── updater.py   # git fetch/pull + pip reinstall, backing the update button
 │   ├── app.py       # CLI entry point (`pre-qc <csv>`)
 │   └── assets/

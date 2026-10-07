@@ -54,10 +54,16 @@ def main(argv=None) -> None:
 
     import napari
 
-    from .widget import QCWidget
+    from .widget import ChecklistWidget, QCWidget
 
     viewer = napari.Viewer(title="pre-qc review")
     _apply_app_icon()
+
+    # "left" is where napari's own layer controls + layer list panels
+    # already live (added automatically by napari.Viewer()) -- docking
+    # here stacks this checklist below them in the same column, rather
+    # than competing for space in the QC review dock on the right.
+    viewer.window.add_dock_widget(ChecklistWidget(), name="QC checklist", area="left")
 
     csv_path = args.csv or _prompt_for_csv()
     if not csv_path:
