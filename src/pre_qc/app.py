@@ -28,23 +28,66 @@ def _apply_app_icon() -> None:
         app.setWindowIcon(QIcon(str(_ICON_PATH)))
 
 
-# Every pre-qc movie is BF and/or PI -- 1 to 3 layers, never a long list --
-# so napari's own default (layer list gets all the leftover vertical space,
-# see napari's Window.__init__) wastes room that the histogram/checklist
-# panels below it could use instead. Five panels (controls, layer list, 2
-# histograms, checklist) can't all be comfortably full-height at once --
-# PanelTogglesWidget lets each be collapsed independently; these starting
-# heights are just a reasonable default for everything open together.
-_LAYER_LIST_HEIGHT = 90
-_HISTOGRAM_HEIGHT = 320
+# Fallback screen height for the proportional sizing below, used only if
+# Qt can't report a real screen (e.g. headless) -- a conservative laptop
+# figure, not a target to size up to.
+_FALLBACK_SCREEN_HEIGHT = 900
+
+# Window/dock margin so pre-qc never claims the *entire* screen (leaves
+# room for the OS taskbar/menu bar and window chrome).
+_SCREEN_MARGIN = 80
+
+
+def _available_screen_height() -> int:
+    from qtpy.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    screen = app.primaryScreen() if app is not None else None
+    if screen is None:
+        return _FALLBACK_SCREEN_HEIGHT
+    return screen.availableGeometry().height()
+
+
+def _fit_window_to_screen(viewer) -> None:
+    """Cap the whole napari window to the user's actual available screen
+    geometry (primary monitor minus taskbar/dock chrome), never bigger --
+    napari's own default size can otherwise exceed a smaller laptop
+    screen. Only shrinks; never grows a window the user already resized
+    down further."""
+    from qtpy.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    screen = app.primaryScreen() if app is not None else None
+    if screen is None:
+        return
+    available = screen.availableGeometry()
+    qt_window = viewer.window._qt_window
+    current = qt_window.geometry()
+    max_w = available.width() - _SCREEN_MARGIN
+    max_h = available.height() - _SCREEN_MARGIN
+    new_w = min(current.width(), max_w)
+    new_h = min(current.height(), max_h)
+    if (new_w, new_h) != (current.width(), current.height()):
+        qt_window.resize(new_w, new_h)
+    # Keep it fully on-screen even after shrinking (e.g. if it had been
+    # positioned near the edge of a larger virtual desktop).
+    qt_window.move(
+        max(available.x(), min(qt_window.x(), available.x() + available.width() - new_w)),
+        max(available.y(), min(qt_window.y(), available.y() + available.height() - new_h)),
+    )
 
 
 def _arrange_left_column(viewer, hist_bf_dock, hist_fl_dock, checklist_dock) -> None:
-    """Cap the native layer-list dock's and both histogram docks' heights,
-    and let the checklist panel (docked last in the same left-hand column)
-    take whatever's left. Mirrors the resizeDocks call napari itself makes
-    in Window.__init__ for layer controls vs. layer list, just extending it
-    to our own added docks."""
+    """Cap the native layer-list dock's and both histogram docks' heights
+    (scaled to the user's actual screen height, not a fixed pixel count
+    that could dwarf a smaller display), and let the checklist panel
+    (docked last in the same left-hand column) take whatever's left.
+    Mirrors the resizeDocks call napari itself makes in Window.__init__
+    for layer controls vs. layer list, just extending it to our own added
+    docks. Five panels (controls, layer list, 2 histograms, checklist)
+    can't all be comfortably full-height at once -- PanelTogglesWidget
+    lets each be collapsed independently; these are just a reasonable
+    starting split for everything open together."""
     try:
         from qtpy.QtCore import Qt as _Qt
 
@@ -55,9 +98,13 @@ def _arrange_left_column(viewer, hist_bf_dock, hist_fl_dock, checklist_dock) -> 
     except AttributeError:
         return
 
+    screen_height = _available_screen_height()
+    layer_list_height = max(70, min(110, int(screen_height * 0.10)))
+    histogram_height = max(120, min(320, int(screen_height * 0.20)))
+
     qt_window.resizeDocks(
         [controls, layer_list, hist_bf_dock, hist_fl_dock, checklist_dock],
-        [controls.minimumHeight(), _LAYER_LIST_HEIGHT, _HISTOGRAM_HEIGHT, _HISTOGRAM_HEIGHT, 10000],
+        [controls.minimumHeight(), layer_list_height, histogram_height, histogram_height, 10000],
         _Qt.Orientation.Vertical,
     )
 
@@ -94,6 +141,7 @@ def main(argv=None) -> None:
 
     viewer = napari.Viewer(title="pre-qc review")
     _apply_app_icon()
+    _fit_window_to_screen(viewer)
 
     # "left" is where napari's own layer controls + layer list panels
     # already live (added automatically by napari.Viewer()) -- docking

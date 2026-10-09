@@ -356,7 +356,10 @@ more panels:
 Five panels (those three plus napari's native layer controls and layer
 list) don't all fit comfortably full-height at once — a **Panels** list of
 dropdown-style toggles (▸ collapsed / ▾ expanded) collapses whichever isn't
-needed right now, independently of the others.
+needed right now, independently of the others. The whole window and these
+panels' starting heights are also sized to your actual screen (never
+bigger than what's available), not a fixed pixel layout tuned for one
+particular monitor.
 
 ## What "analyzability" means here
 
