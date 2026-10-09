@@ -425,7 +425,8 @@ pre-qc/
 │       ├── qc-banner.png          # top-of-dock banner inside the app (transparent background)
 │       ├── qc-banner-readme.png   # same banner, solid black background, used in this README
 │       ├── qc-workflow.png        # workflow diagram used in this README
-│       └── qc-screenshot.png      # real screenshot of the app in use, also used in this README
+│       ├── qc-screenshot.png      # same screenshot, resized/compressed for README/docs use
+│       └── pre-QC-display.png     # original full-resolution screenshot
 └── tests/
     └── test_pre_qc.py             # io/manifest/metrics logic (no napari/Qt needed)
 ```
