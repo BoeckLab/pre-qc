@@ -4,6 +4,8 @@
 
 ![How pre-qc works](src/pre_qc/assets/qc-workflow.png)
 
+![pre-qc in use -- napari with the QC panels dock (left) and QC review dock (right)](src/pre_qc/assets/qc-screenshot.png)
+
 ## Install (macOS — click-through app)
 
 Requires **Python 3.10+** (napari doesn't support older). If your default
@@ -338,9 +340,10 @@ the repo link with would land.
 
 ### Left dock column
 
-Napari's native layer-controls dock (contrast limits/colormap/opacity
-sliders) is hidden -- pre-qc never needs it, and the space is worth more
-to the panels below. Below napari's own layer list, a single
+(See the screenshot at the top of this README for what this looks like in
+practice.) Napari's native layer-controls dock (contrast limits/colormap/
+opacity sliders) is hidden -- pre-qc never needs it, and the space is
+worth more to the panels below. Below napari's own layer list, a single
 **QC panels** dock holds three sections, each collapsed/expanded by
 clicking its own arrowed banner (▸ collapsed / ▾ expanded) — directly
 inline, not a separate list of toggles controlling something elsewhere:
