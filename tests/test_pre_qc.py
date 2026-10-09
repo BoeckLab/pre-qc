@@ -20,27 +20,33 @@ def _write_tiff(path, shape=(4, 2, 16, 16), dtype=np.uint16):
 
 
 def test_resolve_movie_path_finds_single_match(tmp_path):
-    (tmp_path / "well_A1.ome.tiff").touch()
-    found = resolve_movie_path(tmp_path, "A1")
-    assert found.name == "well_A1.ome.tiff"
+    (tmp_path / "well_A1_p01.ome.tiff").touch()
+    found = resolve_movie_path(tmp_path, "A1", "p01")
+    assert found.name == "well_A1_p01.ome.tiff"
+
+
+def test_resolve_movie_path_requires_both_well_and_frame(tmp_path):
+    (tmp_path / "well_A1_p02.ome.tiff").touch()
+    with pytest.raises(MovieResolutionError, match="No uncompressed movie"):
+        resolve_movie_path(tmp_path, "A1", "p01")
 
 
 def test_resolve_movie_path_excludes_jetraw_compressed(tmp_path):
-    (tmp_path / "well_A1.ome.p.tiff").touch()
+    (tmp_path / "well_A1_p01.ome.p.tiff").touch()
     with pytest.raises(MovieResolutionError, match="No uncompressed movie"):
-        resolve_movie_path(tmp_path, "A1")
+        resolve_movie_path(tmp_path, "A1", "p01")
 
 
 def test_resolve_movie_path_raises_on_ambiguous_match(tmp_path):
-    (tmp_path / "well_A1_rep1.tiff").touch()
-    (tmp_path / "well_A1_rep2.tiff").touch()
+    (tmp_path / "well_A1_p01_rep1.tiff").touch()
+    (tmp_path / "well_A1_p01_rep2.tiff").touch()
     with pytest.raises(MovieResolutionError, match="Ambiguous"):
-        resolve_movie_path(tmp_path, "A1")
+        resolve_movie_path(tmp_path, "A1", "p01")
 
 
 def test_resolve_movie_path_raises_when_experiment_path_missing(tmp_path):
     with pytest.raises(MovieResolutionError, match="does not exist"):
-        resolve_movie_path(tmp_path / "nope", "A1")
+        resolve_movie_path(tmp_path / "nope", "A1", "p01")
 
 
 def test_load_any_movie_rejects_p_tiff_by_name(tmp_path):
@@ -93,30 +99,35 @@ def test_load_manifest_requires_expected_columns(tmp_path):
 def test_manifest_mark_and_resume_round_trip(tmp_path):
     exp_dir = tmp_path / "exp"
     exp_dir.mkdir()
-    _write_tiff(exp_dir / "well_A1.tiff")
+    _write_tiff(exp_dir / "well_A1_p01.tiff")
 
     csv_path = tmp_path / "input.csv"
-    pd.DataFrame({"experiment_path": [str(exp_dir)], "position": ["A1"]}).to_csv(csv_path, index=False)
+    pd.DataFrame(
+        {"EXP": [str(exp_dir)], "WELL": ["A1"], "FRAME": ["p01"]}
+    ).to_csv(csv_path, index=False)
 
     rows = manifest.load_or_resume(csv_path)
     assert len(rows) == 1
     assert rows[0].status == "unreviewed"
-    assert rows[0].resolved_path.endswith("well_A1.tiff")
+    assert rows[0].label == ""
+    assert rows[0].resolved_path.endswith("well_A1_p01.tiff")
 
-    manifest.mark(rows[0], "good", note="looks fine")
+    manifest.mark(rows[0], status="good", note="looks fine")
+    manifest.mark(rows[0], label="Q")
     manifest.save_results(csv_path, rows)
 
     resumed = manifest.load_or_resume(csv_path)
     assert resumed[0].status == "good"
+    assert resumed[0].label == "Q"
     assert resumed[0].note == "looks fine"
 
 
 def test_review_summary_counts_statuses():
     rows = [
-        manifest.QCRow(experiment_path="e", position="A1", status="good"),
-        manifest.QCRow(experiment_path="e", position="A2", status="bad"),
-        manifest.QCRow(experiment_path="e", position="A3"),
-        manifest.QCRow(experiment_path="e", position="A4", resolution_error="missing"),
+        manifest.QCRow(exp="e", well="A1", frame="p01", status="good"),
+        manifest.QCRow(exp="e", well="A2", frame="p01", status="bad"),
+        manifest.QCRow(exp="e", well="A3", frame="p01"),
+        manifest.QCRow(exp="e", well="A4", frame="p01", resolution_error="missing"),
     ]
     summary = manifest.review_summary(rows)
     assert summary == {
@@ -131,10 +142,40 @@ def test_review_summary_counts_statuses():
 
 
 def test_review_summary_all_good_when_clean():
-    rows = [manifest.QCRow(experiment_path="e", position=p, status="good") for p in ("A1", "A2")]
+    rows = [
+        manifest.QCRow(exp="e", well=w, frame="p01", status="good") for w in ("A1", "A2")
+    ]
     summary = manifest.review_summary(rows)
     assert summary["all_reviewed"] is True
     assert summary["all_good"] is True
+
+
+def test_suggested_decision_trash_on_any_bad():
+    rows = [
+        manifest.QCRow(exp="e", well="A1", frame="p01", status="good"),
+        manifest.QCRow(exp="e", well="A2", frame="p01", status="bad"),
+    ]
+    assert manifest.suggested_decision(rows) == "trash"
+
+
+def test_suggested_decision_keep_when_all_good():
+    rows = [manifest.QCRow(exp="e", well=w, frame="p01", status="good") for w in ("A1", "A2")]
+    assert manifest.suggested_decision(rows) == "keep"
+
+
+def test_append_and_read_back_experiment_decision(tmp_path, monkeypatch):
+    monkeypatch.setattr(manifest, "DECISIONS_LOG_PATH", tmp_path / "experiment_decisions.csv")
+    rows = [manifest.QCRow(exp="exp1", well="A1", frame="p01", status="good", label="Q")]
+
+    manifest.append_experiment_decision("exp1", "keep", rows)
+    last = manifest.last_experiment_decision("exp1")
+    assert last["decision"] == "keep"
+    assert last["n_Q"] == "1"
+
+    manifest.append_experiment_decision("exp1", "trash", rows)
+    log_df = pd.read_csv(manifest.DECISIONS_LOG_PATH)
+    assert len(log_df) == 2  # appended, not overwritten
+    assert manifest.last_experiment_decision("exp1")["decision"] == "trash"
 
 
 # ---------------------------------------------------------------------

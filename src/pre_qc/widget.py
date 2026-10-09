@@ -6,6 +6,23 @@ Marking good/bad saves the sidecar results CSV immediately, so quitting
 mid-review never loses progress, then auto-advances to the next unreviewed
 row.
 
+Two independent per-movie judgments are tracked, plus one experiment-level
+decision:
+- GOOD/BAD -- can this movie be reviewed at all. Drives a suggested
+  experiment-level decision: any BAD -> suggest trashing the whole
+  experiment; all GOOD -> suggest keeping it.
+- Q/NQ/X label -- for a kept experiment, is this specific movie
+  quantifiable, not quantifiable, or needs a second look, for downstream
+  post-QC analysis. Independent of GOOD/BAD -- set it whenever useful.
+- TRASH/KEEP -- one manual decision per experiment (never auto-applied,
+  always a deliberate button click), appended to a shared, cross-experiment
+  log (see manifest.append_experiment_decision).
+
+A CSV can be loaded at any time via the "Load CSV…" button (or passed on
+the command line / via the initial file-picker) -- loading a new one fully
+resets review state (cleared layers, fresh index, fresh decision-box
+suggestion) rather than merging with whatever was open before.
+
 Movies are loaded on a background QThread, not the GUI thread: these can be
 large (full-resolution multi-hundred-frame stacks) and routinely live on a
 network mount (sciCORE via SSHFS/SMB), so a synchronous read can take
@@ -22,6 +39,7 @@ from pathlib import Path
 from qtpy.QtCore import QObject, Qt, QThread, QTimer, QUrl, Signal
 from qtpy.QtGui import QDesktopServices, QPixmap
 from qtpy.QtWidgets import (
+    QFileDialog,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -113,11 +131,12 @@ class _ReportWorker(QObject):
 
 
 class QCWidget(QWidget):
-    def __init__(self, viewer, csv_path, rows, parent=None):
+    def __init__(self, viewer, csv_path=None, rows=None, parent=None):
         super().__init__(parent)
         self.viewer = viewer
-        self.csv_path = Path(csv_path)
-        self.rows = rows
+        self.csv_path = Path(csv_path) if csv_path else None
+        self.rows = rows or []
+        self._exps = []
         self.index = self._first_unreviewed_index()
         self._layers = []
         self._load_thread = None
@@ -132,12 +151,16 @@ class QCWidget(QWidget):
         banner = _build_banner()
         if banner is not None:
             layout.addWidget(banner, alignment=Qt.AlignHCenter)
+        layout.addWidget(self._build_load_box())
+        layout.addWidget(self._build_decision_box())
         layout.addWidget(self._build_box())
         layout.addWidget(self._build_update_box())
         layout.addStretch()
 
         self.viewer.bind_key("g", lambda v: self._mark("good"), overwrite=True)
         self.viewer.bind_key("b", lambda v: self._mark("bad"), overwrite=True)
+
+        self._refresh_decision_box()
 
         # Deferred rather than called directly: at this point in __init__,
         # the caller (app.py) hasn't embedded this widget into the main
@@ -152,6 +175,42 @@ class QCWidget(QWidget):
         QTimer.singleShot(0, self._load_current)
 
     # ------------------------------------------------------------------
+
+    def _build_load_box(self) -> QGroupBox:
+        box = QGroupBox("Experiment CSV")
+        vbox = QVBoxLayout()
+        box.setLayout(vbox)
+
+        self.csv_label = QLabel(str(self.csv_path) if self.csv_path else "(no CSV loaded)")
+        self.csv_label.setWordWrap(True)
+        self.csv_label.setStyleSheet("color: #888;")
+        vbox.addWidget(self.csv_label)
+
+        load_btn = QPushButton("Load CSV…")
+        load_btn.clicked.connect(self._on_load_csv_clicked)
+        vbox.addWidget(load_btn)
+
+        return box
+
+    def _build_decision_box(self) -> QGroupBox:
+        box = QGroupBox("Experiment decision — TRASH / KEEP")
+        vbox = QVBoxLayout()
+        box.setLayout(vbox)
+
+        self.decision_info_label = QLabel("")
+        self.decision_info_label.setWordWrap(True)
+        vbox.addWidget(self.decision_info_label)
+
+        hbox = QHBoxLayout()
+        self.keep_btn = QPushButton("Keep experiment")
+        self.keep_btn.clicked.connect(lambda: self._on_decide("keep"))
+        hbox.addWidget(self.keep_btn)
+        self.trash_btn = QPushButton("Trash experiment")
+        self.trash_btn.clicked.connect(lambda: self._on_decide("trash"))
+        hbox.addWidget(self.trash_btn)
+        vbox.addLayout(hbox)
+
+        return box
 
     def _build_box(self) -> QGroupBox:
         box = QGroupBox("QC review")
@@ -173,6 +232,10 @@ class QCWidget(QWidget):
         self.note_edit.setPlaceholderText("optional note")
         vbox.addWidget(self.note_edit)
 
+        self.save_btn = QPushButton("Save")
+        self.save_btn.clicked.connect(self._on_save_clicked)
+        vbox.addWidget(self.save_btn)
+
         self.good_btn = QPushButton("Mark GOOD (g)")
         self.good_btn.clicked.connect(lambda: self._mark("good"))
         vbox.addWidget(self.good_btn)
@@ -180,6 +243,28 @@ class QCWidget(QWidget):
         self.bad_btn = QPushButton("Mark BAD (b)")
         self.bad_btn.clicked.connect(lambda: self._mark("bad"))
         vbox.addWidget(self.bad_btn)
+
+        label_hint = QLabel(
+            "Post-QC label (for a kept experiment): is this specific movie "
+            "usable for downstream analysis?"
+        )
+        label_hint.setWordWrap(True)
+        vbox.addWidget(label_hint)
+
+        label_hbox = QHBoxLayout()
+        self.label_q_btn = QPushButton("Q")
+        self.label_q_btn.setToolTip("Quantifiable")
+        self.label_q_btn.clicked.connect(lambda: self._set_label("Q"))
+        label_hbox.addWidget(self.label_q_btn)
+        self.label_nq_btn = QPushButton("NQ")
+        self.label_nq_btn.setToolTip("Not quantifiable")
+        self.label_nq_btn.clicked.connect(lambda: self._set_label("NQ"))
+        label_hbox.addWidget(self.label_nq_btn)
+        self.label_x_btn = QPushButton("X")
+        self.label_x_btn.setToolTip("Check")
+        self.label_x_btn.clicked.connect(lambda: self._set_label("X"))
+        label_hbox.addWidget(self.label_x_btn)
+        vbox.addLayout(label_hbox)
 
         self.prev_btn = QPushButton("← Prev")
         self.prev_btn.clicked.connect(self._go_prev)
@@ -259,6 +344,86 @@ class QCWidget(QWidget):
         from qtpy.QtWidgets import QApplication
 
         QApplication.instance().quit()
+
+    # ------------------------------------------------------------------
+    # CSV loading / experiment switching
+
+    def _on_load_csv_clicked(self) -> None:
+        path, _filter = QFileDialog.getOpenFileName(
+            self, "Select the QC input CSV", "", "CSV files (*.csv)"
+        )
+        if not path:
+            return
+        self.open_csv(path)
+
+    def open_csv(self, csv_path) -> None:
+        """Load (or resume) ``csv_path`` as the active experiment,
+        discarding whatever was previously loaded -- cleared layers, fresh
+        review index, fresh decision-box state. Safe to call at any time,
+        including when a different CSV is already mid-review."""
+        try:
+            rows = manifest.load_or_resume(csv_path)
+        except ValueError as exc:
+            QMessageBox.critical(self, "Failed to load CSV", str(exc))
+            return
+        if not rows:
+            QMessageBox.warning(self, "No rows", f"No rows found in {csv_path}")
+            return
+
+        n_unresolved = sum(1 for r in rows if r.resolution_error)
+        if n_unresolved:
+            print(f"Warning: {n_unresolved}/{len(rows)} row(s) could not be resolved to a file:")
+            for row in rows:
+                if row.resolution_error:
+                    print(f"  - {row.well}/{row.frame}: {row.resolution_error}")
+
+        for layer in self._layers:
+            if layer in self.viewer.layers:
+                self.viewer.layers.remove(layer)
+        self._layers = []
+        self._load_token += 1  # invalidate any in-flight load from the previous CSV
+
+        self.csv_path = Path(csv_path)
+        self.rows = rows
+        self.index = self._first_unreviewed_index()
+        self.csv_label.setText(str(self.csv_path))
+        self._refresh_decision_box()
+        self._load_current()
+
+    # ------------------------------------------------------------------
+    # Experiment-level trash/keep decision
+
+    def _refresh_decision_box(self) -> None:
+        if not self.rows:
+            self.decision_info_label.setText("Load a CSV to decide trash/keep.")
+            self.keep_btn.setEnabled(False)
+            self.trash_btn.setEnabled(False)
+            return
+
+        self.keep_btn.setEnabled(True)
+        self.trash_btn.setEnabled(True)
+        self._exps = sorted(set(r.exp for r in self.rows))
+        suggestion = manifest.suggested_decision(self.rows)
+        summary = manifest.review_summary(self.rows)
+
+        lines = [f"Suggested: {suggestion.upper()} ({summary['n_bad']} bad / {summary['n_total']} total)"]
+        for exp in self._exps:
+            last = manifest.last_experiment_decision(exp)
+            if last:
+                lines.append(f"{Path(exp).name}: last recorded = {last['decision']} ({last['timestamp']})")
+        self.decision_info_label.setText("\n".join(lines))
+
+    def _on_decide(self, decision: str) -> None:
+        if not self.rows:
+            return
+        for exp in self._exps:
+            manifest.append_experiment_decision(exp, decision, self.rows)
+        self._refresh_decision_box()
+        QMessageBox.information(
+            self,
+            "Decision recorded",
+            f"Recorded '{decision}' for {len(self._exps)} experiment(s) in:\n{manifest.DECISIONS_LOG_PATH}",
+        )
 
     # ------------------------------------------------------------------
 
@@ -354,7 +519,17 @@ class QCWidget(QWidget):
         self.path_label.setText(row.resolution_error or row.resolved_path)
 
     def _set_controls_enabled(self, enabled: bool) -> None:
-        for widget in (self.good_btn, self.bad_btn, self.prev_btn, self.next_btn, self.finish_btn):
+        for widget in (
+            self.good_btn,
+            self.bad_btn,
+            self.label_q_btn,
+            self.label_nq_btn,
+            self.label_x_btn,
+            self.save_btn,
+            self.prev_btn,
+            self.next_btn,
+            self.finish_btn,
+        ):
             widget.setEnabled(enabled)
 
     def _refresh_labels(self, row) -> None:
@@ -365,11 +540,12 @@ class QCWidget(QWidget):
             f"{summary['n_unresolved']} unresolved)"
         )
         if row is None:
-            self.position_label.setText("(no rows)")
+            self.position_label.setText("(no rows loaded)")
             self.path_label.setText("")
             return
         self.position_label.setText(
-            f"[{self.index + 1}/{len(self.rows)}] {row.position} — status: {row.status}"
+            f"[{self.index + 1}/{len(self.rows)}] {row.well}/{row.frame} — "
+            f"status: {row.status} — label: {row.label or '(none)'}"
         )
         self.path_label.setText(row.resolution_error or row.resolved_path)
 
@@ -377,9 +553,26 @@ class QCWidget(QWidget):
         row = self._current_row()
         if row is None or row.resolution_error:
             return
-        manifest.mark(row, status, self.note_edit.text())
+        manifest.mark(row, status=status, note=self.note_edit.text())
         manifest.save_results(self.csv_path, self.rows)
+        self._refresh_decision_box()
         self._go_next()
+
+    def _set_label(self, label: str) -> None:
+        row = self._current_row()
+        if row is None or row.resolution_error:
+            return
+        manifest.mark(row, label=label)
+        manifest.save_results(self.csv_path, self.rows)
+        self._refresh_labels(row)
+
+    def _on_save_clicked(self) -> None:
+        row = self._current_row()
+        if row is None or row.resolution_error:
+            return
+        manifest.mark(row, note=self.note_edit.text())
+        manifest.save_results(self.csv_path, self.rows)
+        self._refresh_labels(row)
 
     def _go_next(self) -> None:
         if self.index < len(self.rows) - 1:
@@ -404,7 +597,7 @@ class QCWidget(QWidget):
             )
             return
         if summary["n_bad"] > 0:
-            bad_positions = ", ".join(r.position for r in self.rows if r.status == "bad")
+            bad_positions = ", ".join(f"{r.well}/{r.frame}" for r in self.rows if r.status == "bad")
             QMessageBox.warning(
                 self,
                 "Bad movies present",
@@ -414,13 +607,13 @@ class QCWidget(QWidget):
             )
             return
         if summary["n_unresolved"] > 0:
-            unresolved_positions = ", ".join(r.position for r in self.rows if r.resolution_error)
+            unresolved_positions = ", ".join(f"{r.well}/{r.frame}" for r in self.rows if r.resolution_error)
             proceed = QMessageBox.question(
                 self,
                 "Unresolved rows in CSV",
                 f"{summary['n_unresolved']} row(s) couldn't be matched to a file and were "
                 f"never reviewed: {unresolved_positions}.\n\n"
-                "Fix the experiment_path/position in the input CSV and re-run to include them. "
+                "Fix EXP/WELL/FRAME in the input CSV and re-run to include them. "
                 "Continue and generate the report for the resolvable movies anyway?",
             )
             if proceed != QMessageBox.Yes:

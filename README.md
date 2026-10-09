@@ -162,46 +162,64 @@ workflow.
 
 ## Input CSV
 
-**One shared `experiment_path` for the whole experiment, one row per
-well/position inside it.** `experiment_path` is the *single top-level
-folder* that holds every movie for that experiment — it's the same value
-repeated down the column, not a different folder per row. `position` is
-just that well's label (letter + number, e.g. `A1`, `A12`) — pre-qc finds
-the one file under `experiment_path` whose name contains it, so you don't
-need to know or write out each movie's actual filename.
+**One shared `EXP` for the whole experiment, one row per well/frame inside
+it.** `EXP` is the *single top-level folder* that holds every movie for
+that experiment — it's the same value repeated down the column, not a
+different folder per row. `WELL` is the well label (letter + number, e.g.
+`A1`, `A12`) and `FRAME` is the field-of-view/position token within that
+well (e.g. `p01`) — pre-qc finds the one file under `EXP` whose name
+contains *both* `WELL` and `FRAME` (real acquisition filenames always carry
+both), so you don't need to know or write out each movie's actual
+filename.
 
 Copy [`templates/wells_to_check_template.csv`](templates/wells_to_check_template.csv)
-and fill in your own path/positions rather than writing one from scratch:
+and fill in your own path/wells/frames rather than writing one from scratch:
 
 ```csv
-experiment_path,position,condition
-/scicore/projects/rinfsci/<you>/<your_experiment_folder>,A1,control
-/scicore/projects/rinfsci/<you>/<your_experiment_folder>,A2,treatment
-/scicore/projects/rinfsci/<you>/<your_experiment_folder>,A12,control
-/scicore/projects/rinfsci/<you>/<your_experiment_folder>,B3,treatment
+EXP,WELL,FRAME,COND
+/scicore/projects/rinfsci/<you>/<your_experiment_folder>,A1,p01,control
+/scicore/projects/rinfsci/<you>/<your_experiment_folder>,A2,p01,treatment
+/scicore/projects/rinfsci/<you>/<your_experiment_folder>,A12,p01,control
+/scicore/projects/rinfsci/<you>/<your_experiment_folder>,B3,p01,treatment
 ```
 
-(All four rows point at the *same* `experiment_path` — only `position`
-changes row to row. If you're checking wells across more than one
-experiment, just repeat the pattern with a different `experiment_path`
-value for that experiment's own rows.)
+(All four rows point at the *same* `EXP` — only `WELL`/`FRAME` change row
+to row. If you're checking wells across more than one experiment, just
+repeat the pattern with a different `EXP` value for that experiment's own
+rows — the experiment-level trash/keep decision and the master decisions
+log, see below, are both keyed on this value.)
 
-- `experiment_path` and `position` are required; any extra columns (e.g. a
-  human-readable `condition`) are carried through untouched into the
-  results sidecar, and shown/used to label movies in the report instead of
-  their full file paths.
-- The movie file is found by searching under `experiment_path` for a file
-  whose name contains `position` — no fixed naming convention is assumed
-  beyond that, so this works across different acquisition layouts (a plain
-  well label like `A12` is the common case, but any unique substring
-  works). If that match is ambiguous (more than one file) or missing, the
-  row is flagged rather than guessed at.
+- `EXP`, `WELL` and `FRAME` are required; any extra columns (e.g. a
+  human-readable `COND`) are carried through untouched into the results
+  sidecar, and shown/used to label movies in the report instead of their
+  full file paths.
+- The movie file is found by searching under `EXP` for a file whose name
+  contains both `WELL` and `FRAME` — no fixed naming convention is assumed
+  beyond that, so this works across different acquisition layouts. If that
+  match is ambiguous (more than one file) or missing, the row is flagged
+  rather than guessed at.
 - Any **uncompressed** format works: `.nd2`, `.ome.tiff`/`.ome.tif`, plain
   `.tiff`/`.tif`. JetRaw-compressed `.ome.p.tiff`/`.p.tif` files are
   rejected with a pointer to decompress first (see BacNets'
   `ONBOARDING_JETRAW.md`) — QC is meant to run on exactly what the
   pipeline will see, and JetRaw decoding needs a licensed SDK only set up
   on sciCORE.
+
+### Choosing which wells/frames to review
+
+You don't need to review every well in a plate — a representative subset
+is enough to decide whether the experiment is usable:
+
+- Cover **10–15 conditions** across the plate.
+- Include **2 conditions expected to kill** (positive control for the
+  PI/fluorescence channel actually working).
+- Include **1 growth-control condition** (confirms the baseline is
+  healthy).
+- For **2 wells, review every frame/FOV** in that well (catches
+  within-well variability a single frame would miss).
+- For the remaining wells, one **representative frame per condition and
+  plate position** is enough (e.g. a corner and a center well, not just
+  whichever is first alphabetically).
 
 ## Before you start: compressed files
 
@@ -256,11 +274,16 @@ at a time mid-review:
 pre-qc wells_to_check.csv
 ```
 
-The CSV argument is optional — run `pre-qc` with no argument (which is what
-**QC.app** does) and it opens napari first, then asks for the CSV via a
-native file dialog from inside that already-running window.
+The CSV argument is optional — run `pre-qc` with no argument at all (which
+is what **QC.app** does) and napari opens straight into an idle **QC
+review** dock with nothing loaded yet. From there, either the native file
+dialog that pops up on first launch, or the **Load CSV…** button inside the
+dock at any later point, picks a CSV to review. Loading a CSV while another
+one is mid-review (or already finished) fully switches to the new
+experiment — cleared image layers, a fresh review position, a fresh
+trash/keep suggestion — it never merges the two.
 
-This opens napari with a **QC review** dock:
+Once a CSV is loaded:
 
 1. Scroll frames with napari's own slider (channels show as separate,
    additively-blended layers). A movie can take a while to load, especially
@@ -269,15 +292,38 @@ This opens napari with a **QC review** dock:
 2. Mark the current movie **GOOD** (key `g`) or **BAD** (key `b`) — this
    saves immediately to `<input>_qc_results.csv` and auto-advances to the
    next unreviewed row. Quitting partway through and re-running on the same
-   CSV resumes from where you left off instead of restarting.
-3. Once every resolvable row is marked good, **Finish** computes cheap
+   CSV resumes from where you left off instead of restarting. An optional
+   note can be typed any time and persisted on its own with the **Save**
+   button, without needing to also (re-)mark good/bad.
+3. Optionally set a **Q / NQ / X** post-QC label on the current movie
+   (quantifiable / not quantifiable / needs a second look) — independent of
+   GOOD/BAD, meant for a *kept* experiment where most movies are fine but a
+   few individual ones aren't worth including in downstream analysis. Also
+   saved immediately to the sidecar, as `LABEL`.
+4. Once every resolvable row is marked good, **Finish** computes cheap
    CPU-only analyzability metrics and writes `<input>_qc_report.html` +
    `<input>_qc_metrics.csv`, then opens the HTML report in your browser
    automatically. If any row is still bad or unreviewed, Finish refuses to
    run until that's resolved. The report includes a per-metric comparison
    plot — every movie's full per-frame curve overlaid in its own color on
    the same axes (not just a medians bar chart), so you can directly see
-   e.g. which movie drifted more or lost focus earlier than the others.
+   e.g. which movie drifted more or lost focus earlier than the others —
+   plus a per-movie BF intensity histogram (see "What 'analyzability'
+   means here" below) to judge cell-vs-background density at a glance.
+
+### Experiment decision — TRASH / KEEP
+
+Separately from individual movies, decide whether the **whole experiment**
+is usable. The dock shows a suggestion computed from the good/bad calls
+above (any BAD movie → suggested TRASH; all GOOD → suggested KEEP), plus
+the most recently recorded decision for this `EXP` if there is one — but
+the decision itself is always a deliberate **Keep experiment** / **Trash
+experiment** button click, never auto-applied. Clicking either appends one
+row to a single, shared, append-only log at `experiment_decisions.csv` in
+the repo root (never overwritten — every click adds another line, so the
+full history of decisions across every experiment ever reviewed stays
+intact), recording `EXP`, `decision`, a timestamp, and the good/bad/Q/NQ/X
+counts at the time.
 
 A **Tutorial** button (always visible, next to Check for Updates) opens this
 README on GitHub in your browser — the same place a colleague you've shared
@@ -285,9 +331,11 @@ the repo link with would land.
 
 A **QC checklist** panel sits on the left, below napari's own layer
 controls/layer list — a reference list of what to actually look for when
-deciding good vs. bad (focus, drift, PI signal, saturation, artifacts).
-It's read-only in the app; see `checklist.py` to edit the list itself as
-colleague feedback comes in.
+deciding good vs. bad (focus, drift, PI signal, saturation, artifacts, empty
+fields, unexpected overgrowth/no-growth for a known condition, missing
+channels, frame-count mismatches, unusably low density). It's read-only in
+the app; see `checklist.py` to edit the list itself as colleague feedback
+comes in.
 
 ## What "analyzability" means here
 
@@ -309,6 +357,15 @@ single-channel movies):
 - **foreground fraction** — rough Otsu-threshold coverage, not a cell
   count; flags empty wells (~0) or fully confluent/unsegmentable fields
   (~1).
+- **BF intensity histogram** — pixel-intensity histogram summed over every
+  frame, with that movie's median Otsu cells/background split drawn as a
+  vertical line. A quick visual density check: a single narrow peak with no
+  separate bump on either side of the line usually means an empty or
+  fully saturated/confluent field, while two distinguishable humps mean
+  cells genuinely stand out from background.
+- **density class** — the same foreground-fraction number bucketed into
+  `sparse/empty`, `moderate`, or `dense/confluent`, shown in the report
+  table as a one-glance "is this movie dense or not" call.
 
 **PI / fluorescence (channel 1):**
 - **mean intensity** — flags a channel that's effectively all-dark (wrong
@@ -353,19 +410,20 @@ to the `_qc_results.csv` sidecar, so nothing is lost by the restart.
 pre-qc/
 ├── pyproject.toml
 ├── README.md
+├── experiment_decisions.csv  # shared, append-only TRASH/KEEP log across every experiment (gitignored, created on first decision)
 ├── scripts/
 │   └── install.sh   # macOS one-time: clone/venv/pip install -e . + generates /Applications/QC.app
 ├── templates/
 │   └── wells_to_check_template.csv  # copy + fill in -- see "Input CSV"
 ├── src/pre_qc/
-│   ├── io.py        # uncompressed-movie loading (nd2 + tiff/ome-tiff), path resolution
-│   ├── manifest.py  # CSV manifest, crash-safe good/bad progress tracking
-│   ├── metrics.py   # per-channel (BF/PI) sharpness/drift/saturation/intensity/signal-ratio proxies
+│   ├── io.py        # uncompressed-movie loading (nd2 + tiff/ome-tiff), WELL+FRAME path resolution
+│   ├── manifest.py  # CSV manifest, crash-safe good/bad/Q-NQ-X progress tracking, decisions log
+│   ├── metrics.py   # per-channel (BF/PI) sharpness/drift/saturation/intensity/signal-ratio/histogram proxies
 │   ├── report.py    # static HTML + CSV report (matplotlib plots, base64-embedded, auto-opened)
-│   ├── widget.py     # napari dock widgets: QC review (scroll/mark/Finish/Tutorial/Updates) + checklist
+│   ├── widget.py     # napari dock widgets: QC review (load/scroll/mark/label/decide/Finish/Tutorial/Updates) + checklist
 │   ├── checklist.py # plain-data list of good/bad review criteria shown in the checklist panel
 │   ├── updater.py   # git fetch/pull + pip reinstall, backing the update button
-│   ├── app.py       # CLI entry point (`pre-qc <csv>`)
+│   ├── app.py       # CLI entry point (`pre-qc [csv]` -- csv optional, can load later from the app)
 │   └── assets/
 │       ├── qc_icon.png      # shared app icon -- same one post-qc will use
 │       ├── qc-banner.png        # top-of-dock banner inside the app (transparent background)

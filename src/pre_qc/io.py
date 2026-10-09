@@ -71,23 +71,26 @@ def _raise_if_jetraw(path: Path) -> None:
         )
 
 
-def resolve_movie_path(experiment_path, position: str) -> Path:
+def resolve_movie_path(experiment_path, well: str, frame: str) -> Path:
     """Find the single uncompressed movie file under ``experiment_path``
-    whose name contains ``position``.
+    whose name contains both ``well`` (e.g. ``A10``) and ``frame`` (e.g.
+    ``p01``) as substrings.
 
-    No project-wide file-naming convention is assumed beyond "the position
-    string appears somewhere in the filename" -- deliberately loose so the
-    tool works across the lab's different acquisition layouts, trading
-    precision for not needing per-pipeline path-construction logic
-    maintained here. Raises if zero or more than one candidate is found.
+    No project-wide file-naming convention is assumed beyond "both tokens
+    appear somewhere in the filename" -- deliberately loose so the tool
+    works across the lab's different acquisition layouts, trading precision
+    for not needing per-pipeline path-construction logic maintained here.
+    Raises if zero or more than one candidate is found.
     """
     root = Path(experiment_path)
     if not root.exists():
-        raise MovieResolutionError(f"experiment_path does not exist: {root}")
+        raise MovieResolutionError(f"experiment_path (EXP) does not exist: {root}")
 
     candidates = []
-    for path in root.rglob(f"*{position}*"):
+    for path in root.rglob(f"*{well}*"):
         if not path.is_file():
+            continue
+        if frame not in path.name:
             continue
         name = path.name.lower()
         if any(marker in name for marker in _COMPRESSED_MARKERS):
@@ -97,16 +100,16 @@ def resolve_movie_path(experiment_path, position: str) -> Path:
 
     if not candidates:
         raise MovieResolutionError(
-            f"No uncompressed movie found under {root} matching position "
-            f"{position!r}. (JetRaw-compressed .p.tiff/.p.tif files are "
-            "deliberately excluded -- decompress them first.)"
+            f"No uncompressed movie found under {root} matching WELL "
+            f"{well!r} and FRAME {frame!r}. (JetRaw-compressed .p.tiff/.p.tif "
+            "files are deliberately excluded -- decompress them first.)"
         )
     if len(candidates) > 1:
         listed = "\n  ".join(str(c) for c in sorted(candidates))
         raise MovieResolutionError(
-            f"Ambiguous: {len(candidates)} files under {root} match position "
-            f"{position!r}:\n  {listed}\nNarrow the position string so it "
-            "matches exactly one file."
+            f"Ambiguous: {len(candidates)} files under {root} match WELL "
+            f"{well!r} and FRAME {frame!r}:\n  {listed}\nNarrow WELL/FRAME so "
+            "they match exactly one file."
         )
     return candidates[0]
 

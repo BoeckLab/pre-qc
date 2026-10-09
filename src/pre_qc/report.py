@@ -27,12 +27,15 @@ def _movie_label(path: str) -> str:
 
 
 def _display_label(record: dict) -> str:
-    """"A12 (control)" instead of the full resolved file path -- position
-    plus any "condition"-like column (carried through from the input CSV)
-    is what a reviewer actually recognizes at a glance, not a long sciCORE
-    path. Falls back to the filename if even position is missing."""
-    position = record.get("position") or ""
-    condition = record.get("condition")
+    """"A12_p01 (control)" instead of the full resolved file path --
+    WELL/FRAME plus any condition-like column (carried through from the
+    input CSV as COND) is what a reviewer actually recognizes at a glance,
+    not a long sciCORE path. Falls back to the filename if even WELL is
+    missing."""
+    well = record.get("WELL") or ""
+    frame = record.get("FRAME") or ""
+    position = f"{well}_{frame}" if well and frame else (well or frame)
+    condition = record.get("COND") or record.get("condition")
     if position and condition:
         return f"{position} ({condition})"
     if position:
@@ -107,6 +110,35 @@ def _comparison_figure(per_movie: dict, labels_by_path: dict):
     return fig
 
 
+def _bf_histogram_figure(per_movie: dict, labels_by_path: dict):
+    """One small subplot per movie: BF pixel-intensity histogram (summed
+    over all frames) with a vertical line at that movie's median Otsu
+    split -- shows at a glance whether cells (one side of the line) stand
+    out from background (the other side), or the field is just one flat
+    peak (empty/saturated)."""
+    movies = list(per_movie.items())
+    n = len(movies)
+    ncols = min(4, n) or 1
+    nrows = -(-n // ncols)  # ceil
+    fig, axes = plt.subplots(nrows, ncols, figsize=(3.6 * ncols, 2.6 * nrows), squeeze=False)
+    flat_axes = [ax for row in axes for ax in row]
+
+    for ax, (path, m) in zip(flat_axes, movies):
+        edges = m.bf_hist_bin_edges
+        centers = (edges[:-1] + edges[1:]) / 2
+        ax.bar(centers, m.bf_hist_counts, width=(edges[1] - edges[0]), color="#4c72b0")
+        ax.axvline(m.bf_otsu_threshold_median, color="#c44e52", linestyle="--", linewidth=1)
+        ax.set_title(labels_by_path.get(path, _movie_label(path)), fontsize=8)
+        ax.set_yscale("log")
+        ax.tick_params(labelsize=6)
+    for ax in flat_axes[n:]:
+        ax.axis("off")
+
+    fig.suptitle("BF intensity histogram (log count) -- dashed line = cells/background Otsu split", fontsize=9)
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    return fig
+
+
 _BF_SUMMARY_SPECS = [
     ("bf_sharpness_median", "median BF sharpness", None),
     ("bf_contrast_median", "median BF contrast", None),
@@ -173,21 +205,32 @@ def write_html_report(summary_df: pd.DataFrame, per_movie: dict, out_path) -> Pa
             "<p>Each color is one movie -- see the legend above the plots.</p>"
             f'<img src="data:image/png;base64,{comparison_fig_b64}">'
         )
+        histogram_fig_b64 = _fig_to_base64(_bf_histogram_figure(per_movie, labels_by_path))
+        sections.append(
+            "<h2>BF intensity histogram — cells vs. background density</h2>"
+            "<p>One panel per movie; the dashed line is that movie's median "
+            "Otsu cells/background split. A single narrow peak (no separate "
+            "bump on either side of the line) usually means an empty or "
+            "fully confluent/saturated field.</p>"
+            f'<img src="data:image/png;base64,{histogram_fig_b64}">'
+        )
 
     failed_html = ""
     if not failed.empty:
         rows_html = "".join(
-            f"<tr><td>{r['position']}</td><td>{r['resolved_path']}</td><td>{r['error']}</td></tr>"
+            f"<tr><td>{r['WELL']}</td><td>{r['FRAME']}</td><td>{r['resolved_path']}</td><td>{r['error']}</td></tr>"
             for _, r in failed.iterrows()
         )
         failed_html = (
             "<h2>Failed to compute metrics</h2>"
-            "<table border='1' cellpadding='4'><tr><th>position</th><th>path</th><th>error</th></tr>"
+            "<table border='1' cellpadding='4'><tr><th>WELL</th><th>FRAME</th><th>path</th><th>error</th></tr>"
             f"{rows_html}</table>"
         )
 
-    table_columns = ["position"]
-    if not ok.empty and "condition" in ok.columns:
+    table_columns = ["WELL", "FRAME"]
+    if not ok.empty and "COND" in ok.columns:
+        table_columns.append("COND")
+    elif not ok.empty and "condition" in ok.columns:
         table_columns.append("condition")
     table_columns += [
         "n_frames",
@@ -197,6 +240,7 @@ def write_html_report(summary_df: pd.DataFrame, per_movie: dict, out_path) -> Pa
         "bf_mean_intensity_median",
         "bf_contrast_median",
         "bf_foreground_frac_median",
+        "bf_density_class",
         "drift_cumulative_px",
         "saturation_max_frac",
     ]

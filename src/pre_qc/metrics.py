@@ -45,6 +45,10 @@ PI / fluorescence (channel 1):
 Saturation (fraction of pixels at the dtype's max value) is tracked for
 every channel, not just BF/PI, since it's cheap and channel-agnostic.
 
+bf_density_class buckets bf_foreground_frac_median into sparse/moderate/
+dense -- a coarse "is this movie worth analyzing" call for empty-field vs.
+confluent-overgrowth extremes.
+
 These are heuristic proxies for "will the real pipeline have something to
 work with", not a substitute for it.
 """
@@ -79,6 +83,9 @@ class MovieMetrics:
     bf_contrast: np.ndarray  # (T,)
     bf_foreground_frac: np.ndarray  # (T,)
     drift_px: np.ndarray  # (T,) cumulative, drift_px[0] == 0, computed on BF
+    bf_hist_counts: np.ndarray  # (n_bins,) pixel-intensity histogram, summed over every frame
+    bf_hist_bin_edges: np.ndarray  # (n_bins + 1,)
+    bf_otsu_threshold_median: float  # median per-frame Otsu split -- the cells/background cut line
 
     # PI / fluorescence (channel 1) -- None if the movie has no 2nd channel
     pi_mean_intensity: np.ndarray | None = None  # (T,)
@@ -97,6 +104,8 @@ def compute_movie_metrics(path) -> MovieMetrics:
     saturation_frac = np.array(
         [[_saturation_fraction(data[t, c]) for c in range(n_channels)] for t in range(n_frames)]
     )
+
+    bf_hist_counts, bf_hist_bin_edges = _bf_histogram(bf)
 
     pi_mean_intensity = pi_signal_ratio = pi_p95 = pi_snr = pi_positive_frac = None
     if n_channels > PI_CHANNEL:
@@ -120,6 +129,9 @@ def compute_movie_metrics(path) -> MovieMetrics:
         bf_contrast=np.array([float(frame.std()) for frame in bf]),
         bf_foreground_frac=np.array([_foreground_fraction(frame) for frame in bf]),
         drift_px=_cumulative_drift(bf),
+        bf_hist_counts=bf_hist_counts,
+        bf_hist_bin_edges=bf_hist_bin_edges,
+        bf_otsu_threshold_median=_bf_otsu_median(bf),
         pi_mean_intensity=pi_mean_intensity,
         pi_signal_ratio=pi_signal_ratio,
         pi_p95=pi_p95,
@@ -175,6 +187,45 @@ def _snr(frame: np.ndarray) -> float:
     return float((foreground.mean() - background.mean()) / background_std)
 
 
+_BF_HIST_BINS = 64
+
+# bf_foreground_frac thresholds for the coarse density call surfaced in the
+# report/checklist -- "is this movie dense or not" (colleague-facing
+# shorthand, distinct from PI's SNR metric even though it was requested
+# under that name). Empty/near-empty fields and overgrown/confluent fields
+# both need flagging, for opposite reasons (nothing to track vs. nothing
+# segmentable).
+_DENSITY_SPARSE_MAX = 0.03
+_DENSITY_DENSE_MIN = 0.5
+
+
+def _bf_histogram(bf_stack: np.ndarray) -> tuple:
+    """Pixel-intensity histogram of the BF channel, summed over every frame
+    -- a density proxy: a bimodal histogram (background peak + separate
+    brighter/darker cell peak) means cells stand out, a single narrow peak
+    means an empty or saturated field."""
+    vmin, vmax = float(bf_stack.min()), float(bf_stack.max())
+    if vmin == vmax:
+        vmax = vmin + 1.0  # avoid a zero-width np.histogram range on a flat stack
+    counts, bin_edges = np.histogram(bf_stack.ravel(), bins=_BF_HIST_BINS, range=(vmin, vmax))
+    return counts, bin_edges
+
+
+def _bf_otsu_median(bf_stack: np.ndarray) -> float:
+    thresholds = [
+        float(threshold_otsu(frame)) for frame in bf_stack if frame.max() != frame.min()
+    ]
+    return float(np.median(thresholds)) if thresholds else 0.0
+
+
+def _density_class(bf_foreground_frac_median: float) -> str:
+    if bf_foreground_frac_median < _DENSITY_SPARSE_MAX:
+        return "sparse/empty"
+    if bf_foreground_frac_median > _DENSITY_DENSE_MIN:
+        return "dense/confluent"
+    return "moderate"
+
+
 def _cumulative_drift(bf_stack: np.ndarray) -> np.ndarray:
     n_frames = bf_stack.shape[0]
     drift = np.zeros(n_frames)
@@ -204,6 +255,7 @@ def summarize(metrics: MovieMetrics) -> dict:
         "bf_foreground_frac_median": float(np.median(metrics.bf_foreground_frac)),
         "drift_cumulative_px": float(metrics.drift_px[-1]) if metrics.n_frames else 0.0,
     }
+    record["bf_density_class"] = _density_class(record["bf_foreground_frac_median"])
     if metrics.pi_mean_intensity is not None:
         record["pi_mean_intensity_median"] = float(np.median(metrics.pi_mean_intensity))
         record["pi_signal_ratio_median"] = float(np.median(metrics.pi_signal_ratio))
@@ -224,15 +276,23 @@ def compute_batch_metrics(rows) -> tuple:
     ``(summary_df, per_movie_metrics)`` where ``per_movie_metrics`` maps
     ``resolved_path -> MovieMetrics`` for the per-frame plots, and failures
     (e.g. a corrupt file) are recorded in the summary rather than aborting
-    the whole batch."""
+    the whole batch. ``summary_df`` carries each row's status/LABEL/NOTES
+    too, written out as ``<input>_qc_metrics.csv`` -- a separate file from
+    the review sidecar (``<input>_qc_results.csv``), self-contained enough
+    on its own to see what was decided about a movie alongside its
+    computed metrics."""
     summaries = []
     per_movie = {}
     for row in rows:
         record = {
-            "experiment_path": row.experiment_path,
-            "position": row.position,
+            "EXP": row.exp,
+            "WELL": row.well,
+            "FRAME": row.frame,
             "resolved_path": row.resolved_path,
-            **row.extra,  # e.g. "condition" -- carried through so the report can label by it
+            **row.extra,  # e.g. "COND" -- carried through so the report can label by it
+            "status": row.status,
+            "LABEL": row.label,
+            "NOTES": row.note,
         }
         try:
             metrics = compute_movie_metrics(row.resolved_path)

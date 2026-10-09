@@ -2,7 +2,6 @@
 widget."""
 
 import argparse
-import sys
 from pathlib import Path
 
 # napari/Qt sets its own default app icon (the napari logo) on the running
@@ -63,11 +62,13 @@ def main(argv=None) -> None:
     parser = argparse.ArgumentParser(
         description=(
             "Pre-pipeline QC review: scroll each raw movie listed in a CSV "
-            "(columns experiment_path, position) and mark it good/bad. Once "
-            "every resolvable row is good, computes cheap analyzability "
-            "metrics (sharpness/drift/saturation/foreground coverage) and "
+            "(columns EXP, WELL, FRAME) and mark it good/bad, plus an "
+            "optional Q/NQ/X post-QC label. Once every resolvable row is "
+            "good, computes cheap analyzability metrics (sharpness/drift/"
+            "saturation/foreground coverage/BF intensity histogram) and "
             "writes an HTML report -- before committing GPU hours to the "
-            "real ASCT pipeline."
+            "real ASCT pipeline. The CSV is optional -- run with none and "
+            "load one later from inside the app (Load CSV button)."
         )
     )
     # Optional, not required: the macOS app launcher execs straight into
@@ -79,7 +80,7 @@ def main(argv=None) -> None:
     # differently-iconed Dock entry would appear right as the dialog
     # closed and napari started). Asking from inside the already-running,
     # already-correctly-iconed Qt process avoids that entirely.
-    parser.add_argument("csv", nargs="?", help="Input CSV with experiment_path and position columns.")
+    parser.add_argument("csv", nargs="?", help="Input CSV with EXP, WELL and FRAME columns.")
     args = parser.parse_args(argv)
 
     import napari
@@ -98,26 +99,17 @@ def main(argv=None) -> None:
     )
     _shrink_layer_list(viewer, checklist_dock)
 
-    csv_path = args.csv or _prompt_for_csv()
-    if not csv_path:
-        sys.exit(0)  # user cancelled the picker -- quit quietly, nothing was loaded yet
-
-    from . import manifest
-
-    rows = manifest.load_or_resume(csv_path)
-    if not rows:
-        print(f"No rows found in {csv_path}", file=sys.stderr)
-        sys.exit(1)
-
-    n_unresolved = sum(1 for r in rows if r.resolution_error)
-    if n_unresolved:
-        print(f"Warning: {n_unresolved}/{len(rows)} row(s) could not be resolved to a file:")
-        for row in rows:
-            if row.resolution_error:
-                print(f"  - {row.position}: {row.resolution_error}")
-
-    widget = QCWidget(viewer, csv_path, rows)
+    # No CSV required up front -- the widget starts in an idle state (Load
+    # CSV button, everything else disabled) and a CSV can be loaded any
+    # time, including switching to a different experiment later, which
+    # fully resets review state rather than merging with what came before.
+    widget = QCWidget(viewer, None, None)
     viewer.window.add_dock_widget(widget, name="QC review", area="right")
+
+    csv_path = args.csv or _prompt_for_csv()
+    if csv_path:
+        widget.open_csv(csv_path)
+
     napari.run()
 
 
