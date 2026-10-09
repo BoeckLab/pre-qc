@@ -339,8 +339,8 @@ the repo link with would land.
 ### Left dock column
 
 Napari's native layer-controls dock (contrast limits/colormap/opacity
-sliders) is removed entirely -- pre-qc never needs it, and the space is
-worth more to the panels below. Below napari's own layer list, a single
+sliders) is hidden -- pre-qc never needs it, and the space is worth more
+to the panels below. Below napari's own layer list, a single
 **QC panels** dock holds three sections, each collapsed/expanded by
 clicking its own arrowed banner (▸ collapsed / ▾ expanded) — directly
 inline, not a separate list of toggles controlling something elsewhere:

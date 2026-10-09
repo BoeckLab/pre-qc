@@ -38,17 +38,24 @@ def _fit_window_to_screen(viewer) -> None:
 
 
 def _remove_layer_controls(viewer) -> None:
-    """Delete napari's native layer-controls dock entirely (contrast
-    limits/colormap/opacity sliders) -- pre-qc never needs to adjust those
-    to judge good/bad, and the space is worth more to the histogram/
-    checklist panels sharing the left column."""
+    """Hide napari's native layer-controls dock (contrast limits/colormap/
+    opacity sliders) -- pre-qc never needs to adjust those to judge
+    good/bad, and the space is worth more to the histogram/checklist
+    panels sharing the left column.
+
+    Hidden, not actually removed: ``QMainWindow.removeDockWidget`` plus
+    ``deleteLater`` destroys the ``QtLayerControlsContainer`` Qt object,
+    but napari's model-side ``viewer.layers.selection.events.changed``
+    listener that populates it stays connected regardless (it isn't owned
+    by the Qt widget's lifecycle) -- every subsequent ``add_image`` call
+    then crashes with ``KeyError`` inside ``_populate`` trying to look up
+    controls for the new layer in what's now an empty/dead widget map.
+    Hiding leaves the Qt object (and its wiring) alive, just invisible."""
     try:
-        qt_window = viewer.window._qt_window
         controls = viewer.window._qt_viewer.dockLayerControls
     except AttributeError:
         return
-    qt_window.removeDockWidget(controls)
-    controls.deleteLater()
+    controls.setVisible(False)
 
 
 def _arrange_left_column(viewer, qc_panels_dock) -> None:
