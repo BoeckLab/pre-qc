@@ -95,7 +95,7 @@ pip install --upgrade pip
 pip install -e .
 ```
 
-**3. Run it** (see "Input CSV" below for the CSV format; `experiment_path`
+**3. Run it** (see "Input CSV" below for the CSV format; `EXP`
 needs to resolve to something locally readable from wherever you run this —
 see "Accessing experiment data from sciCORE" if your movies live there):
 
@@ -118,7 +118,7 @@ yet.)
 
 ## Accessing experiment data from sciCORE
 
-`experiment_path` in the input CSV must be a path that's locally readable
+`EXP` in the input CSV must be a path that's locally readable
 from wherever `pre-qc` runs — there's no built-in SSH/S3 support, pre-qc
 only ever opens local files. **Don't run pre-qc itself on a sciCORE login
 node** (interactive GUI apps don't belong there, and X11-forwarded napari
@@ -139,7 +139,7 @@ sshfs <username>@login-node.scicore.unibas.ch:/scicore/home/boeluc00/<username> 
 
 (macOS: first install needs a one-time approval in **System Settings →
 Privacy & Security**, sometimes needs a reboot to fully take.) Once
-mounted, point `experiment_path` at e.g. `~/scicore/experiment_042`.
+mounted, point `EXP` at e.g. `~/scicore/experiment_042`.
 Unmount when done: `umount ~/scicore` (or `fusermount -u ~/scicore` on
 Linux).
 
@@ -154,7 +154,7 @@ log in with your sciCORE credentials. Mounts under `/Volumes/RINFsci$`.
 rsync -avP <username>@login-node.scicore.unibas.ch:/path/to/experiment_042/ ~/local_qc_data/experiment_042/
 ```
 
-Then point `experiment_path` at `~/local_qc_data/experiment_042`.
+Then point `EXP` at `~/local_qc_data/experiment_042`.
 
 **JetRaw-compressed files (`.ome.p.tiff`) can't be opened by pre-qc at all**
 — see "Before you start: compressed files" below for the decompress-first
@@ -223,7 +223,7 @@ is enough to decide whether the experiment is usable:
 
 ## Before you start: compressed files
 
-pre-qc only reads **uncompressed** movies. If any position in your CSV
+pre-qc only reads **uncompressed** movies. If any movie in your CSV
 points at a JetRaw-compressed file (`.ome.p.tiff`/`.p.tif`), it can't be
 opened here — JetRaw needs a licensed SDK that's only set up on sciCORE,
 never on a laptop. Run this pre-run check **on sciCORE** once your CSV is
@@ -240,22 +240,22 @@ at a time mid-review:
    ```bash
    # on sciCORE, from any directory, with your jetraw-tools venv active
    CSV=wells_to_check.csv
-   tail -n +2 "$CSV" | while IFS=',' read -r experiment_path position _; do
-     plain=$(find "$experiment_path" -iname "*${position}*" \
+   tail -n +2 "$CSV" | while IFS=',' read -r exp well frame _; do
+     plain=$(find "$exp" -iname "*${well}*" \
        \( -iname "*.tif" -o -iname "*.tiff" -o -iname "*.nd2" \) 2>/dev/null \
-       | grep -v -E '\.p\.tiff?$')
+       | grep -v -E '\.p\.tiff?$' | grep -F "$frame")
      if [ -n "$plain" ]; then
-       echo "OK (already uncompressed): $position"
+       echo "OK (already uncompressed): ${well}/${frame}"
        continue
      fi
-     compressed=$(find "$experiment_path" -iname "*${position}*" \
-       \( -iname "*.p.tiff" -o -iname "*.p.tif" \) 2>/dev/null)
+     compressed=$(find "$exp" -iname "*${well}*" \
+       \( -iname "*.p.tiff" -o -iname "*.p.tif" \) 2>/dev/null | grep -F "$frame")
      if [ -z "$compressed" ]; then
-       echo "MISSING: no file found for $position under $experiment_path"
+       echo "MISSING: no file found for ${well}/${frame} under $exp"
        continue
      fi
      out="${compressed%.p.tiff}.tiff"
-     echo "Decompressing $position: $compressed -> $out"
+     echo "Decompressing ${well}/${frame}: $compressed -> $out"
      python ~/scripts/decompress_jetraw.py "$compressed" "$out"
    done
    ```
@@ -263,7 +263,7 @@ at a time mid-review:
    is always safe, it just reports "OK" for rows that don't need work.
 3. **Bring the plain `.tiff`/`.nd2` output over** to wherever you'll run
    pre-qc (see "Accessing experiment data from sciCORE" above) — same
-   folder layout, so your CSV's `experiment_path`/`position` still resolve.
+   folder layout, so your CSV's `EXP`/`WELL`/`FRAME` still resolve.
 4. **Then launch pre-qc.** If a row still can't be resolved (still
    compressed, wrong path, ambiguous match), it's flagged in the terminal
    and in the app rather than crashing the whole review.
