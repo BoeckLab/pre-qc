@@ -10,7 +10,9 @@ summed-over-all-frames snapshot generated only at Finish time.
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
-from qtpy.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
+from qtpy.QtWidgets import QLabel, QSizePolicy, QVBoxLayout, QWidget
+
+from .metrics import _density_class, _foreground_fraction, _snr
 
 _N_BINS = 64
 
@@ -36,7 +38,11 @@ class HistogramWidget(QWidget):
         self.ax.set_title(f"{self._title} — no frame loaded", fontsize=8)
         self.ax.tick_params(labelsize=6)
         self.figure.tight_layout()
-        self.canvas.draw_idle()
+        # Immediate, not draw_idle() -- this is already called from the GUI
+        # thread on a real event (movie loaded / frame scrubbed), so there's
+        # no reason to defer and risk the repaint getting coalesced away by
+        # whatever else the event loop does before an idle slot fires.
+        self.canvas.draw()
 
     def set_frame(self, frame: np.ndarray) -> None:
         """Redraw for a single 2D frame, or clear if ``frame`` is None
@@ -52,4 +58,38 @@ class HistogramWidget(QWidget):
         self.ax.set_title(self._title, fontsize=8)
         self.ax.tick_params(labelsize=6)
         self.figure.tight_layout()
-        self.canvas.draw_idle()
+        # Immediate, not draw_idle() -- this is already called from the GUI
+        # thread on a real event (movie loaded / frame scrubbed), so there's
+        # no reason to defer and risk the repaint getting coalesced away by
+        # whatever else the event loop does before an idle slot fires.
+        self.canvas.draw()
+
+
+class MeasuresWidget(QWidget):
+    """Small live readout of the current frame's density/SNR numbers --
+    the same proxies metrics.py computes for the post-hoc report, but
+    live, so a reviewer can judge "is this movie dense or not" from an
+    actual number instead of eyeballing the histogram shape alone."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+        self._label = QLabel("no frame loaded")
+        self._label.setWordWrap(True)
+        layout.addWidget(self._label)
+
+    def set_frames(self, bf_frame: np.ndarray, fl_frame: np.ndarray = None) -> None:
+        """``bf_frame`` is required (channel 0); ``fl_frame`` (channel 1,
+        PI/fluorescence) is optional -- omitted entirely for single-channel
+        movies, same convention as metrics.py."""
+        if bf_frame is None:
+            self._label.setText("no frame loaded")
+            return
+        bf_frac = _foreground_fraction(bf_frame)
+        lines = [f"BF foreground fraction: {bf_frac:.3f}  ({_density_class(bf_frac)})"]
+        if fl_frame is not None:
+            fl_frac = _foreground_fraction(fl_frame)
+            lines.append(f"PI SNR: {_snr(fl_frame):.2f}")
+            lines.append(f"PI positive fraction: {fl_frac:.3f}")
+        self._label.setText("\n".join(lines))

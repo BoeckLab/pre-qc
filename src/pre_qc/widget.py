@@ -48,7 +48,6 @@ from qtpy.QtWidgets import (
     QMessageBox,
     QProgressDialog,
     QPushButton,
-    QScrollArea,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -134,7 +133,9 @@ class _ReportWorker(QObject):
 
 
 class QCWidget(QWidget):
-    def __init__(self, viewer, csv_path=None, rows=None, parent=None, hist_bf=None, hist_fl=None):
+    def __init__(
+        self, viewer, csv_path=None, rows=None, parent=None, hist_bf=None, hist_fl=None, measures=None
+    ):
         super().__init__(parent)
         self.viewer = viewer
         self.csv_path = Path(csv_path) if csv_path else None
@@ -148,11 +149,12 @@ class QCWidget(QWidget):
         self._loading_dialog = None
         self._report_thread = None
         self._report_worker = None
-        # Live per-frame histogram panels docked elsewhere in the left
-        # column (see app.py) -- optional, pushed to on movie load/frame
-        # scrub rather than owned by this widget.
+        # Live per-frame histogram/measures panels docked elsewhere in the
+        # left column (see app.py) -- optional, pushed to on movie
+        # load/frame scrub rather than owned by this widget.
         self.hist_bf = hist_bf
         self.hist_fl = hist_fl
+        self.measures = measures
 
         layout = QVBoxLayout()
         self.setLayout(layout)
@@ -286,6 +288,10 @@ class QCWidget(QWidget):
         hbox = QHBoxLayout()
         box.setLayout(hbox)
 
+        checklist_btn = QPushButton("QC checklist")
+        checklist_btn.clicked.connect(self._on_checklist_clicked)
+        hbox.addWidget(checklist_btn)
+
         tutorial_btn = QPushButton("Tutorial")
         tutorial_btn.clicked.connect(self._on_tutorial_clicked)
         hbox.addWidget(tutorial_btn)
@@ -299,6 +305,10 @@ class QCWidget(QWidget):
         hbox.addStretch()
 
         return box
+
+    def _on_checklist_clicked(self) -> None:
+        bullet_text = "\n\n".join(f"• {item}" for item in CHECKLIST_ITEMS)
+        QMessageBox.information(self, "What to check for", bullet_text)
 
     def _on_tutorial_clicked(self) -> None:
         QDesktopServices.openUrl(QUrl(_README_URL))
@@ -511,18 +521,25 @@ class QCWidget(QWidget):
         if row is None:
             return
 
-        for c, name in enumerate(movie.channel_names):
-            layer = self.viewer.add_image(movie.data[:, c, :, :], name=name, blending="additive")
-            self._layers.append(layer)
-        if self.viewer.dims.current_step:
-            self.viewer.dims.current_step = (0,) * len(self.viewer.dims.current_step)
+        try:
+            for c, name in enumerate(movie.channel_names):
+                layer = self.viewer.add_image(movie.data[:, c, :, :], name=name, blending="additive")
+                self._layers.append(layer)
+            if self.viewer.dims.current_step:
+                self.viewer.dims.current_step = (0,) * len(self.viewer.dims.current_step)
 
-        # So the reviewer always knows what they're looking at without
-        # reading the dock -- COND if the CSV has one, else WELL/FRAME.
-        self.viewer.text_overlay.text = self._condition_text(row)
-        self.viewer.text_overlay.position = "top_left"
-        self.viewer.text_overlay.visible = True
-        self._update_histograms()
+            # So the reviewer always knows what they're looking at without
+            # reading the dock -- COND if the CSV has one, else WELL/FRAME.
+            self.viewer.text_overlay.text = self._condition_text(row)
+            self.viewer.text_overlay.position = "top_left"
+            self.viewer.text_overlay.visible = True
+        finally:
+            # Always, even if a napari-internal error interrupted the layer
+            # setup above (this has happened -- see the layer-controls
+            # KeyError fix) -- the histograms are useless if a problem
+            # elsewhere in this method silently skips the line that feeds
+            # them real data, leaving them stuck on "no frame loaded".
+            self._update_histograms()
 
     @staticmethod
     def _condition_text(row) -> str:
@@ -534,24 +551,29 @@ class QCWidget(QWidget):
 
     def _update_histograms(self) -> None:
         """Push the currently-displayed frame's pixel data into the live
-        histogram panels (see app.py/histogram_widget.py) -- channel 0 is
-        BF, channel 1 (if present) is PI/FL, matching the convention used
-        throughout metrics.py. Clears both when nothing is loaded."""
+        histogram/measures panels (see app.py/histogram_widget.py) --
+        channel 0 is BF, channel 1 (if present) is PI/FL, matching the
+        convention used throughout metrics.py. Clears everything when
+        nothing is loaded."""
         if not self._layers:
             if self.hist_bf is not None:
                 self.hist_bf.set_frame(None)
             if self.hist_fl is not None:
                 self.hist_fl.set_frame(None)
+            if self.measures is not None:
+                self.measures.set_frames(None)
             return
 
         t = self.viewer.dims.current_step[0] if self.viewer.dims.current_step else 0
+        bf_frame = np.asarray(self._layers[0].data[t])
+        fl_frame = np.asarray(self._layers[1].data[t]) if len(self._layers) > 1 else None
+
         if self.hist_bf is not None:
-            self.hist_bf.set_frame(np.asarray(self._layers[0].data[t]))
+            self.hist_bf.set_frame(bf_frame)
         if self.hist_fl is not None:
-            if len(self._layers) > 1:
-                self.hist_fl.set_frame(np.asarray(self._layers[1].data[t]))
-            else:
-                self.hist_fl.set_frame(None)
+            self.hist_fl.set_frame(fl_frame)
+        if self.measures is not None:
+            self.measures.set_frames(bf_frame, fl_frame)
 
     def _set_controls_enabled(self, enabled: bool) -> None:
         for widget in (
@@ -694,36 +716,6 @@ class QCWidget(QWidget):
         )
 
 
-_CHECKLIST_MAX_HEIGHT = 220
-
-
-class ChecklistWidget(QWidget):
-    """Read-only reference list of what to look for when deciding
-    good/bad -- docked on the left (see app.py/LeftPanelsWidget). Plain
-    data, not editable in-app: see checklist.py to update the list itself
-    once colleague feedback comes in.
-
-    Scrollable and height-capped rather than growing to fit all items --
-    the list keeps gaining entries as feedback comes in, and letting it
-    expand freely would starve the histogram panels sharing this dock of
-    space."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        layout = QVBoxLayout()
-        self.setLayout(layout)
-
-        bullet_text = "\n".join(f"• {item}" for item in CHECKLIST_ITEMS)
-        label = QLabel(bullet_text)
-        label.setWordWrap(True)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setMaximumHeight(_CHECKLIST_MAX_HEIGHT)
-        scroll.setWidget(label)
-        layout.addWidget(scroll)
-
-
 class CollapsibleSection(QWidget):
     """A clickable arrowed banner that shows/hides its own content directly
     below it when clicked -- an inline accordion section, not a separate
@@ -757,19 +749,18 @@ class CollapsibleSection(QWidget):
 
 
 class LeftPanelsWidget(QWidget):
-    """One combined dock holding the histogram and checklist panels as
-    inline accordion sections (see CollapsibleSection) -- each collapses
-    independently via its own banner instead of a separate list of
-    toggles controlling other docks."""
+    """One combined dock holding the two live histogram panels plus a
+    small density/SNR measures readout, as inline accordion sections (see
+    CollapsibleSection) -- each collapses independently via its own
+    banner. The checklist itself lives behind a popup button in the Help &
+    updates box instead (see
+    QCWidget._build_update_box/_on_checklist_clicked) rather than
+    permanently occupying space here."""
 
-    def __init__(self, hist_bf: QWidget, hist_fl: QWidget, checklist: QWidget, parent=None):
+    def __init__(self, hist_bf: QWidget, hist_fl: QWidget, measures: QWidget, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout()
         self.setLayout(layout)
-        # Stretch factors so the histograms (the main reason this dock
-        # exists) get first claim on extra space -- the checklist is
-        # already height-capped and scrollable (see ChecklistWidget), so it
-        # doesn't need to compete for room.
         layout.addWidget(CollapsibleSection("Histogram BF", hist_bf), 3)
         layout.addWidget(CollapsibleSection("Histogram FL", hist_fl), 3)
-        layout.addWidget(CollapsibleSection("QC checklist", checklist), 1)
+        layout.addWidget(CollapsibleSection("Density measures", measures), 0)

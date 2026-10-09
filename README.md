@@ -350,21 +350,28 @@ inline, not a separate list of toggles controlling something elsewhere:
   scrub frames or switch movies. The same cells-vs-background density read
   as the post-hoc report's histogram (see below), just interactive instead
   of only generated once at Finish. These two get first claim on any extra
-  vertical space in the dock (that's the point of this panel), so they end
-  up noticeably taller than the checklist below them.
-- **QC checklist** — a reference list of what to actually look for when
-  deciding good vs. bad (focus, drift, PI signal, saturation, artifacts,
-  empty fields, unexpected overgrowth/no-growth for a known condition,
-  missing channels, frame-count mismatches, unusably low density). Read-only
-  in the app (see `checklist.py` to edit the list itself as colleague
-  feedback comes in) and height-capped with its own scrollbar, so a
-  growing list of items doesn't eat into the histograms' space.
+  vertical space in the dock, so they end up noticeably taller than the
+  measures readout below them.
+- **Density measures** — a small live readout below the histograms:
+  BF foreground fraction (+ the same sparse/moderate/dense call the report
+  table uses), PI SNR, and PI positive fraction for whichever frame is on
+  screen — numbers to back up what the histogram shape already suggests,
+  not just a visual judgment call.
 
 Collapsing a section simply frees its space for the others (normal Qt
 layout, not a fixed pixel split), so any combination fits. The window
 itself opens maximized to your actual screen's available work area (full
 width, height capped by the OS taskbar/dock chrome) rather than a fixed
 size tuned for one particular monitor.
+
+The **QC checklist** itself — a reference list of what to actually look
+for when deciding good vs. bad (focus, drift, PI signal, saturation,
+artifacts, empty fields, unexpected overgrowth/no-growth for a known
+condition, missing channels, frame-count mismatches, unusably low density)
+— lives behind a **QC checklist** button in the QC review dock's Help &
+updates row (next to Tutorial and Check for Updates), popping up the full
+list rather than permanently occupying left-column space. Read-only; see
+`checklist.py` to edit the list itself as colleague feedback comes in.
 
 ## What "analyzability" means here
 
@@ -449,9 +456,9 @@ pre-qc/
 │   ├── manifest.py  # CSV manifest, crash-safe good/bad/Q-NQ-X progress tracking, decisions log
 │   ├── metrics.py   # per-channel (BF/PI) sharpness/drift/saturation/intensity/signal-ratio/histogram proxies
 │   ├── report.py    # static HTML + CSV report (matplotlib plots, base64-embedded, auto-opened)
-│   ├── widget.py     # napari dock widgets: QC review (load/scroll/mark/label/decide/Finish/Tutorial/Updates) + checklist + collapsible accordion sections
-│   ├── histogram_widget.py # live per-frame BF/FL intensity histogram panel (left dock column)
-│   ├── checklist.py # plain-data list of good/bad review criteria shown in the checklist panel
+│   ├── widget.py     # napari dock widgets: QC review (load/scroll/mark/label/decide/Finish/Tutorial/Updates/checklist popup) + collapsible accordion sections
+│   ├── histogram_widget.py # live per-frame BF/FL intensity histogram + density/SNR measures panels (left dock column)
+│   ├── checklist.py # plain-data list of good/bad review criteria shown in the checklist popup
 │   ├── updater.py   # git fetch/pull + pip reinstall, backing the update button
 │   ├── app.py       # CLI entry point (`pre-qc [csv]` -- csv optional, can load later from the app)
 │   └── assets/

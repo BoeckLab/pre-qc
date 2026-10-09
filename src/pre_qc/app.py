@@ -40,8 +40,8 @@ def _fit_window_to_screen(viewer) -> None:
 def _remove_layer_controls(viewer) -> None:
     """Hide napari's native layer-controls dock (contrast limits/colormap/
     opacity sliders) -- pre-qc never needs to adjust those to judge
-    good/bad, and the space is worth more to the histogram/checklist
-    panels sharing the left column.
+    good/bad, and the space is worth more to the histogram panels sharing
+    the left column.
 
     Hidden, not actually removed: ``QMainWindow.removeDockWidget`` plus
     ``deleteLater`` destroys the ``QtLayerControlsContainer`` Qt object,
@@ -60,11 +60,11 @@ def _remove_layer_controls(viewer) -> None:
 
 def _arrange_left_column(viewer, qc_panels_dock) -> None:
     """Cap the native layer-list dock's height and let the combined QC
-    panels dock (histograms + checklist, each independently collapsible --
-    see LeftPanelsWidget) take the rest. No fixed pixel height is needed
-    for the histograms/checklist themselves -- collapsing a section inside
-    that dock simply frees space for the others via normal Qt layout,
-    which adapts to whatever height the dock actually has."""
+    panels dock (both histograms, each independently collapsible -- see
+    LeftPanelsWidget) take the rest. No fixed pixel height is needed for
+    the histograms themselves -- collapsing a section inside that dock
+    simply frees space for the other via normal Qt layout, which adapts to
+    whatever height the dock actually has."""
     try:
         from qtpy.QtCore import Qt as _Qt
 
@@ -108,8 +108,8 @@ def main(argv=None) -> None:
 
     import napari
 
-    from .histogram_widget import HistogramWidget
-    from .widget import ChecklistWidget, LeftPanelsWidget, QCWidget
+    from .histogram_widget import HistogramWidget, MeasuresWidget
+    from .widget import LeftPanelsWidget, QCWidget
 
     viewer = napari.Viewer(title="pre-qc review")
     _apply_app_icon()
@@ -119,14 +119,18 @@ def main(argv=None) -> None:
     # "left" is where napari's own layer list already lives (added
     # automatically by napari.Viewer()) -- docking here stacks this below
     # it in the same column, rather than competing for space in the QC
-    # review dock on the right. Histograms and checklist share one dock as
-    # inline accordion sections (each with its own clickable arrowed
-    # banner, see LeftPanelsWidget) instead of three separate docks plus a
-    # remote list of toggles.
+    # review dock on the right. The histograms and the small density/SNR
+    # measures readout below them share one dock as inline accordion
+    # sections (each with its own clickable arrowed banner, see
+    # LeftPanelsWidget). The checklist lives behind a popup button in the
+    # QC review dock's Help & updates box instead (see
+    # QCWidget._on_checklist_clicked) -- it doesn't need permanent screen
+    # space the way a live histogram does.
     hist_bf_widget = HistogramWidget("BF intensity")
     hist_fl_widget = HistogramWidget("PI/FL intensity")
+    measures_widget = MeasuresWidget()
     qc_panels_dock = viewer.window.add_dock_widget(
-        LeftPanelsWidget(hist_bf_widget, hist_fl_widget, ChecklistWidget()),
+        LeftPanelsWidget(hist_bf_widget, hist_fl_widget, measures_widget),
         name="QC panels",
         area="left",
     )
@@ -136,7 +140,9 @@ def main(argv=None) -> None:
     # CSV button, everything else disabled) and a CSV can be loaded any
     # time, including switching to a different experiment later, which
     # fully resets review state rather than merging with what came before.
-    widget = QCWidget(viewer, None, None, hist_bf=hist_bf_widget, hist_fl=hist_fl_widget)
+    widget = QCWidget(
+        viewer, None, None, hist_bf=hist_bf_widget, hist_fl=hist_fl_widget, measures=measures_widget
+    )
     viewer.window.add_dock_widget(widget, name="QC review", area="right")
 
     csv_path = args.csv or _prompt_for_csv()
