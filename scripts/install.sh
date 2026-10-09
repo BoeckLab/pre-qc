@@ -1,9 +1,7 @@
 #!/bin/bash
 # One-time installer for pre-qc (macOS only).
 #
-# Run this once, from Terminal, after cloning the repo (private repo --
-# needs a GitHub SSH key registered first, same one-time setup as
-# cell-slate -- see README's Install section):
+# Run this once, from Terminal, after cloning the repo:
 #   bash scripts/install.sh
 #
 # It clones/updates ~/pre-qc, builds an isolated venv, installs the
@@ -30,7 +28,7 @@
 # to pick up updates.
 set -euo pipefail
 
-REPO_URL="git@github.com:BoeckLab/pre-qc.git"
+REPO_URL="https://github.com/BoeckLab/pre-qc.git"
 INSTALL_DIR="$HOME/pre-qc"
 APP_NAME="QC.app"
 APP_DIR="/Applications/$APP_NAME"

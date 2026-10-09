@@ -3,10 +3,9 @@
 Deliberately uncompressed-formats-only: QC runs before the pipeline, on
 whatever is sitting in the experiment folder straight off the scope (.nd2)
 or already exported (.ome.tiff/.tiff). JetRaw-compressed files
-(.ome.p.tiff/.p.tif) need a licensed SDK only set up on sciCORE (see
-BacNets' ONBOARDING_JETRAW.md) -- rather than silently trying and failing
-deep in a decode call, we refuse them upfront with a pointer to decompress
-first.
+(.ome.p.tiff/.p.tif) need a separately-licensed SDK pre-qc doesn't
+bundle -- rather than silently trying and failing deep in a decode call,
+we refuse them upfront with a pointer to decompress first.
 """
 
 from dataclasses import dataclass
@@ -48,14 +47,14 @@ _COMPRESSED_MARKERS = (".p.tiff", ".p.tif")
 
 
 class MovieResolutionError(ValueError):
-    """Raised when a CSV row's (experiment_path, position) can't be resolved
+    """Raised when a CSV row's (EXP, WELL, FRAME) can't be resolved
     to exactly one uncompressed movie file, or a file can't be loaded."""
 
 
 def _raise_if_jetraw(path: Path) -> None:
     """Fail early with an actionable message instead of letting
     tifffile/imagecodecs crash deep inside a decode call -- JetRaw needs a
-    licensed SDK that only exists on sciCORE, never on a laptop."""
+    separately-licensed SDK, not something pre-qc can decode on its own."""
     try:
         with tifffile.TiffFile(str(path)) as tif:
             compression = tif.pages[0].compression
@@ -64,10 +63,11 @@ def _raise_if_jetraw(path: Path) -> None:
     if int(compression) == _JETRAW_COMPRESSION_TAG:
         raise MovieResolutionError(
             f"{path.name} is JetRaw-compressed -- pre-qc can't decode this "
-            "codec locally (it needs a licensed SDK that's only set up on sciCORE). "
-            "Decompress it on sciCORE first, then load the plain .tiff it produces "
-            "(see BacNets' ONBOARDING_JETRAW.md section 4: "
-            '`jetraw-tools decompress <folder> --extension ".ome.p.tiff"`).'
+            "codec locally (it needs a separately-licensed SDK, e.g. "
+            "jetraw-tools, that pre-qc doesn't bundle). Decompress it first, "
+            'then load the plain .tiff it produces (e.g. '
+            '`jetraw-tools decompress <folder> --extension ".ome.p.tiff"`, '
+            "if that's the decoder you have)."
         )
 
 

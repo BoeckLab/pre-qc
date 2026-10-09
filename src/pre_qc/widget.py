@@ -25,7 +25,7 @@ suggestion) rather than merging with whatever was open before.
 
 Movies are loaded on a background QThread, not the GUI thread: these can be
 large (full-resolution multi-hundred-frame stacks) and routinely live on a
-network mount (sciCORE via SSHFS/SMB), so a synchronous read can take
+network mount (e.g. SSHFS/SMB to a remote server), so a synchronous read can take
 anywhere from several seconds to over a minute. Loading it inline in
 ``__init__``/the GUI thread would freeze event processing before the window
 even finishes its first paint -- napari's main window can appear to never

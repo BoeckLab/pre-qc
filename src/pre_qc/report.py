@@ -30,7 +30,7 @@ def _display_label(record: dict) -> str:
     """"A12_p01 (control)" instead of the full resolved file path --
     WELL/FRAME plus any condition-like column (carried through from the
     input CSV as COND) is what a reviewer actually recognizes at a glance,
-    not a long sciCORE path. Falls back to the filename if even WELL is
+    not a long remote-storage path. Falls back to the filename if even WELL is
     missing."""
     well = record.get("WELL") or ""
     frame = record.get("FRAME") or ""

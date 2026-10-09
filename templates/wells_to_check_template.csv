@@ -1,5 +1,5 @@
 EXP,WELL,FRAME,COND
-/scicore/projects/rinfsci/<you>/<your_experiment_folder>,A1,p01,control
-/scicore/projects/rinfsci/<you>/<your_experiment_folder>,A2,p01,treatment
-/scicore/projects/rinfsci/<you>/<your_experiment_folder>,A12,p01,control
-/scicore/projects/rinfsci/<you>/<your_experiment_folder>,B3,p01,treatment
+/path/to/<your_experiment_folder>,A1,p01,control
+/path/to/<your_experiment_folder>,A2,p01,treatment
+/path/to/<your_experiment_folder>,A12,p01,control
+/path/to/<your_experiment_folder>,B3,p01,treatment
