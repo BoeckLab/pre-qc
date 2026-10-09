@@ -28,66 +28,24 @@ def _apply_app_icon() -> None:
         app.setWindowIcon(QIcon(str(_ICON_PATH)))
 
 
-# Fallback screen height for the proportional sizing below, used only if
-# Qt can't report a real screen (e.g. headless) -- a conservative laptop
-# figure, not a target to size up to.
-_FALLBACK_SCREEN_HEIGHT = 900
-
-# Window/dock margin so pre-qc never claims the *entire* screen (leaves
-# room for the OS taskbar/menu bar and window chrome).
-_SCREEN_MARGIN = 80
-
-
-def _available_screen_height() -> int:
-    from qtpy.QtWidgets import QApplication
-
-    app = QApplication.instance()
-    screen = app.primaryScreen() if app is not None else None
-    if screen is None:
-        return _FALLBACK_SCREEN_HEIGHT
-    return screen.availableGeometry().height()
-
-
 def _fit_window_to_screen(viewer) -> None:
-    """Cap the whole napari window to the user's actual available screen
-    geometry (primary monitor minus taskbar/dock chrome), never bigger --
-    napari's own default size can otherwise exceed a smaller laptop
-    screen. Only shrinks; never grows a window the user already resized
-    down further."""
-    from qtpy.QtWidgets import QApplication
-
-    app = QApplication.instance()
-    screen = app.primaryScreen() if app is not None else None
-    if screen is None:
-        return
-    available = screen.availableGeometry()
-    qt_window = viewer.window._qt_window
-    current = qt_window.geometry()
-    max_w = available.width() - _SCREEN_MARGIN
-    max_h = available.height() - _SCREEN_MARGIN
-    new_w = min(current.width(), max_w)
-    new_h = min(current.height(), max_h)
-    if (new_w, new_h) != (current.width(), current.height()):
-        qt_window.resize(new_w, new_h)
-    # Keep it fully on-screen even after shrinking (e.g. if it had been
-    # positioned near the edge of a larger virtual desktop).
-    qt_window.move(
-        max(available.x(), min(qt_window.x(), available.x() + available.width() - new_w)),
-        max(available.y(), min(qt_window.y(), available.y() + available.height() - new_h)),
-    )
+    """Maximize the main window to the user's actual available screen work
+    area -- full width, height capped to what's actually there. Letting Qt
+    maximize (rather than computing a geometry ourselves) adapts correctly
+    per-monitor/per-OS, including taskbar/dock chrome, instead of guessing
+    a margin that's wrong on some setups."""
+    viewer.window._qt_window.showMaximized()
 
 
-def _arrange_left_column(viewer, hist_bf_dock, hist_fl_dock, checklist_dock) -> None:
-    """Cap the native layer-list dock's and both histogram docks' heights
-    (scaled to the user's actual screen height, not a fixed pixel count
-    that could dwarf a smaller display), and let the checklist panel
-    (docked last in the same left-hand column) take whatever's left.
-    Mirrors the resizeDocks call napari itself makes in Window.__init__
-    for layer controls vs. layer list, just extending it to our own added
-    docks. Five panels (controls, layer list, 2 histograms, checklist)
-    can't all be comfortably full-height at once -- PanelTogglesWidget
-    lets each be collapsed independently; these are just a reasonable
-    starting split for everything open together."""
+def _arrange_left_column(viewer, qc_panels_dock) -> None:
+    """Cap the native layer-list dock's height and let the combined QC
+    panels dock (histograms + checklist, each independently collapsible --
+    see LeftPanelsWidget) take the rest. Mirrors the resizeDocks call
+    napari itself makes in Window.__init__ for layer controls vs. layer
+    list, just extending it to our own added dock. No fixed pixel height
+    is needed for the histograms/checklist themselves -- collapsing a
+    section inside that dock simply frees space for the others via normal
+    Qt layout, which adapts to whatever height the dock actually has."""
     try:
         from qtpy.QtCore import Qt as _Qt
 
@@ -98,13 +56,9 @@ def _arrange_left_column(viewer, hist_bf_dock, hist_fl_dock, checklist_dock) -> 
     except AttributeError:
         return
 
-    screen_height = _available_screen_height()
-    layer_list_height = max(70, min(110, int(screen_height * 0.10)))
-    histogram_height = max(120, min(320, int(screen_height * 0.20)))
-
     qt_window.resizeDocks(
-        [controls, layer_list, hist_bf_dock, hist_fl_dock, checklist_dock],
-        [controls.minimumHeight(), layer_list_height, histogram_height, histogram_height, 10000],
+        [controls, layer_list, qc_panels_dock],
+        [controls.minimumHeight(), 90, 10000],
         _Qt.Orientation.Vertical,
     )
 
@@ -137,7 +91,7 @@ def main(argv=None) -> None:
     import napari
 
     from .histogram_widget import HistogramWidget
-    from .widget import ChecklistWidget, PanelTogglesWidget, QCWidget
+    from .widget import ChecklistWidget, LeftPanelsWidget, QCWidget
 
     viewer = napari.Viewer(title="pre-qc review")
     _apply_app_icon()
@@ -145,38 +99,19 @@ def main(argv=None) -> None:
 
     # "left" is where napari's own layer controls + layer list panels
     # already live (added automatically by napari.Viewer()) -- docking
-    # here stacks these below them in the same column, rather than
-    # competing for space in the QC review dock on the right.
+    # here stacks this below them in the same column, rather than
+    # competing for space in the QC review dock on the right. Histograms
+    # and checklist share one dock as inline accordion sections (each with
+    # its own clickable arrowed banner, see LeftPanelsWidget) instead of
+    # three separate docks plus a remote list of toggles.
     hist_bf_widget = HistogramWidget("BF intensity")
     hist_fl_widget = HistogramWidget("PI/FL intensity")
-    hist_bf_dock = viewer.window.add_dock_widget(
-        hist_bf_widget, name="Histogram BF", area="left"
-    )
-    hist_fl_dock = viewer.window.add_dock_widget(
-        hist_fl_widget, name="Histogram FL", area="left"
-    )
-    checklist_dock = viewer.window.add_dock_widget(
-        ChecklistWidget(), name="QC checklist", area="left"
-    )
-    _arrange_left_column(viewer, hist_bf_dock, hist_fl_dock, checklist_dock)
-
-    # A checkbox per left-column dock so all five (native layer controls,
-    # native layer list, both live histograms, checklist) can coexist --
-    # collapse whichever isn't needed right now instead of them fighting
-    # over fixed heights.
-    viewer.window.add_dock_widget(
-        PanelTogglesWidget(
-            {
-                "Layer controls": viewer.window._qt_viewer.dockLayerControls,
-                "Layer list": viewer.window._qt_viewer.dockLayerList,
-                "Histogram BF": hist_bf_dock,
-                "Histogram FL": hist_fl_dock,
-                "QC checklist": checklist_dock,
-            }
-        ),
-        name="Panels",
+    qc_panels_dock = viewer.window.add_dock_widget(
+        LeftPanelsWidget(hist_bf_widget, hist_fl_widget, ChecklistWidget()),
+        name="QC panels",
         area="left",
     )
+    _arrange_left_column(viewer, qc_panels_dock)
 
     # No CSV required up front -- the widget starts in an idle state (Load
     # CSV button, everything else disabled) and a CSV can be loaded any

@@ -718,37 +718,48 @@ class ChecklistWidget(QWidget):
         layout.addStretch()
 
 
-class PanelTogglesWidget(QWidget):
-    """One disclosure-style dropdown toggle per left-column dock (layer
-    controls, layer list, both live histograms, checklist) -- there isn't
-    room for all five open at once, so each can be collapsed independently
-    instead of fighting over fixed heights. Stays in sync if a dock is
-    hidden/shown some other way (e.g. napari's own View menu, or dragging
-    its close button)."""
+class CollapsibleSection(QWidget):
+    """A clickable arrowed banner that shows/hides its own content directly
+    below it when clicked -- an inline accordion section, not a separate
+    panel remotely controlling something elsewhere."""
 
-    def __init__(self, docks: dict, parent=None):
+    def __init__(self, title: str, content: QWidget, expanded: bool = True, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.setLayout(layout)
+
+        self._header = QToolButton()
+        self._header.setCheckable(True)
+        self._header.setChecked(expanded)
+        self._header.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self._header.setStyleSheet(
+            "QToolButton { border: none; text-align: left; font-weight: bold; }"
+        )
+        self._header.setText(title)
+        self._header.setArrowType(Qt.DownArrow if expanded else Qt.RightArrow)
+        self._header.toggled.connect(self._on_toggled)
+        layout.addWidget(self._header)
+
+        self._content = content
+        self._content.setVisible(expanded)
+        layout.addWidget(self._content)
+
+    def _on_toggled(self, checked: bool) -> None:
+        self._content.setVisible(checked)
+        self._header.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
+
+
+class LeftPanelsWidget(QWidget):
+    """One combined dock holding the histogram and checklist panels as
+    inline accordion sections (see CollapsibleSection) -- each collapses
+    independently via its own banner instead of a separate list of
+    toggles controlling other docks."""
+
+    def __init__(self, hist_bf: QWidget, hist_fl: QWidget, checklist: QWidget, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout()
         self.setLayout(layout)
-
-        box = QGroupBox("Panels")
-        box_layout = QVBoxLayout()
-        box.setLayout(box_layout)
-
-        for label, dock in docks.items():
-            button = QToolButton()
-            button.setCheckable(True)
-            button.setChecked(dock.isVisible())
-            button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-            button.setStyleSheet("QToolButton { border: none; text-align: left; }")
-            button.setArrowType(Qt.DownArrow if dock.isVisible() else Qt.RightArrow)
-            button.setText(label)
-            button.toggled.connect(dock.setVisible)
-            button.toggled.connect(
-                lambda checked, b=button: b.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
-            )
-            dock.visibilityChanged.connect(button.setChecked)
-            box_layout.addWidget(button)
-
-        layout.addWidget(box)
-        layout.addStretch()
+        layout.addWidget(CollapsibleSection("Histogram BF", hist_bf))
+        layout.addWidget(CollapsibleSection("Histogram FL", hist_fl))
+        layout.addWidget(CollapsibleSection("QC checklist", checklist))

@@ -338,8 +338,10 @@ the repo link with would land.
 
 ### Left dock column
 
-Below napari's own layer controls/layer list, the left column stacks three
-more panels:
+Below napari's own layer controls/layer list, a single **QC panels** dock
+holds three sections, each collapsed/expanded by clicking its own arrowed
+banner (▸ collapsed / ▾ expanded) — directly inline, not a separate list of
+toggles controlling something elsewhere:
 
 - **Histogram BF** / **Histogram FL** — a live pixel-intensity histogram of
   whichever frame is currently on screen, one per channel, redrawn as you
@@ -353,13 +355,11 @@ more panels:
   in the app; see `checklist.py` to edit the list itself as colleague
   feedback comes in.
 
-Five panels (those three plus napari's native layer controls and layer
-list) don't all fit comfortably full-height at once — a **Panels** list of
-dropdown-style toggles (▸ collapsed / ▾ expanded) collapses whichever isn't
-needed right now, independently of the others. The whole window and these
-panels' starting heights are also sized to your actual screen (never
-bigger than what's available), not a fixed pixel layout tuned for one
-particular monitor.
+Collapsing a section simply frees its space for the others (normal Qt
+layout, not a fixed pixel split), so any combination fits. The window
+itself opens maximized to your actual screen's available work area (full
+width, height capped by the OS taskbar/dock chrome) rather than a fixed
+size tuned for one particular monitor.
 
 ## What "analyzability" means here
 
@@ -444,7 +444,7 @@ pre-qc/
 │   ├── manifest.py  # CSV manifest, crash-safe good/bad/Q-NQ-X progress tracking, decisions log
 │   ├── metrics.py   # per-channel (BF/PI) sharpness/drift/saturation/intensity/signal-ratio/histogram proxies
 │   ├── report.py    # static HTML + CSV report (matplotlib plots, base64-embedded, auto-opened)
-│   ├── widget.py     # napari dock widgets: QC review (load/scroll/mark/label/decide/Finish/Tutorial/Updates) + checklist + panel toggles
+│   ├── widget.py     # napari dock widgets: QC review (load/scroll/mark/label/decide/Finish/Tutorial/Updates) + checklist + collapsible accordion sections
 │   ├── histogram_widget.py # live per-frame BF/FL intensity histogram panel (left dock column)
 │   ├── checklist.py # plain-data list of good/bad review criteria shown in the checklist panel
 │   ├── updater.py   # git fetch/pull + pip reinstall, backing the update button
