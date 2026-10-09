@@ -352,10 +352,16 @@ inline, not a separate list of toggles controlling something elsewhere:
   of only generated once at Finish. These two get first claim on any extra
   vertical space in the dock, so they end up noticeably taller than the
   measures readout below them.
-- **Density measures** — a small live readout below the histograms:
-  BF foreground fraction (+ the same sparse/moderate/dense call the report
-  table uses), PI SNR, and PI positive fraction for whichever frame is on
-  screen — numbers to back up what the histogram shape already suggests,
+- **Density measures** — a small live readout below the histograms for
+  whichever frame is on screen: BF foreground fraction (+ the same
+  sparse/moderate/dense call the report table uses — foreground fraction
+  below 3% is "sparse/empty", above 50% is "dense/confluent", everything
+  else in between is "moderate"), BF contrast (a flat or badly out-of-focus
+  frame can read as artificially sparse on foreground fraction alone, but
+  also has low contrast, so the two together catch that case), PI SNR, PI
+  positive fraction, and PI signal ratio (p99/median — distinguishes a
+  channel with no real dynamic range from one with genuinely few PI+
+  cells). Numbers to back up what the histogram shape already suggests,
   not just a visual judgment call.
 
 Collapsing a section simply frees its space for the others (normal Qt

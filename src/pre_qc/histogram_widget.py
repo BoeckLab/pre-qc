@@ -12,7 +12,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from qtpy.QtWidgets import QLabel, QSizePolicy, QVBoxLayout, QWidget
 
-from .metrics import _density_class, _foreground_fraction, _snr
+from .metrics import _density_class, _foreground_fraction, _signal_ratio, _snr
 
 _N_BINS = 64
 
@@ -69,7 +69,17 @@ class MeasuresWidget(QWidget):
     """Small live readout of the current frame's density/SNR numbers --
     the same proxies metrics.py computes for the post-hoc report, but
     live, so a reviewer can judge "is this movie dense or not" from an
-    actual number instead of eyeballing the histogram shape alone."""
+    actual number instead of eyeballing the histogram shape alone.
+
+    BF foreground fraction (+ its sparse/moderate/dense bucket) is the
+    primary density call, but it's a single Otsu-threshold coverage number
+    -- BF contrast backs it up (a flat/empty or badly out-of-focus frame
+    reads as artificially "sparse" on foreground fraction alone, but also
+    has low contrast, so the two together catch that case). PI SNR/signal
+    ratio do the same job for the fluorescence channel: positive fraction
+    alone can't distinguish a channel with no real dynamic range (SNR/
+    signal ratio near the noise floor) from one with genuinely few PI+
+    cells."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -87,9 +97,13 @@ class MeasuresWidget(QWidget):
             self._label.setText("no frame loaded")
             return
         bf_frac = _foreground_fraction(bf_frame)
-        lines = [f"BF foreground fraction: {bf_frac:.3f}  ({_density_class(bf_frac)})"]
+        lines = [
+            f"BF foreground fraction: {bf_frac:.3f}  ({_density_class(bf_frac)})",
+            f"BF contrast (std): {float(bf_frame.std()):.1f}",
+        ]
         if fl_frame is not None:
             fl_frac = _foreground_fraction(fl_frame)
             lines.append(f"PI SNR: {_snr(fl_frame):.2f}")
             lines.append(f"PI positive fraction: {fl_frac:.3f}")
+            lines.append(f"PI signal ratio (p99/median): {_signal_ratio(fl_frame):.2f}")
         self._label.setText("\n".join(lines))
