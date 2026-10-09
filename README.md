@@ -402,28 +402,44 @@ to the `_qc_results.csv` sidecar, so nothing is lost by the restart.
 
 ```
 pre-qc/
+├── LICENSE
 ├── pyproject.toml
 ├── README.md
-├── experiment_decisions.csv  # shared, append-only TRASH/KEEP log across every experiment (gitignored, created on first decision)
+├── experiment_decisions.csv       # shared, append-only TRASH/KEEP log across every experiment (gitignored, created on first decision)
 ├── scripts/
-│   └── install.sh   # macOS one-time: clone/venv/pip install -e . + generates /Applications/QC.app
+│   └── install.sh                 # macOS one-time: clone/venv/pip install -e . + generates /Applications/QC.app
 ├── templates/
 │   └── wells_to_check_template.csv  # copy + fill in -- see "Input CSV"
 ├── src/pre_qc/
-│   ├── io.py        # uncompressed-movie loading (nd2 + tiff/ome-tiff), WELL+FRAME path resolution
-│   ├── manifest.py  # CSV manifest, crash-safe good/bad/Q-NQ-X progress tracking, decisions log
-│   ├── metrics.py   # per-channel (BF/PI) sharpness/drift/saturation/intensity/signal-ratio/histogram proxies
-│   ├── report.py    # static HTML + CSV report (matplotlib plots, base64-embedded, auto-opened)
-│   ├── widget.py     # napari dock widgets: QC review (load/scroll/mark/label/decide/Finish/Tutorial/Updates/checklist popup) + collapsible accordion sections
-│   ├── histogram_widget.py # live per-frame BF/FL intensity histogram + density/SNR measures panels (left dock column)
-│   ├── checklist.py # plain-data list of good/bad review criteria shown in the checklist popup
-│   ├── updater.py   # git fetch/pull + pip reinstall, backing the update button
-│   ├── app.py       # CLI entry point (`pre-qc [csv]` -- csv optional, can load later from the app)
+│   ├── app.py                     # CLI entry point (`pre-qc [csv]` -- csv optional, can load later from the app); window sizing, left-column dock assembly
+│   ├── widget.py                  # QC review dock (load/scroll/mark/label/decide/Finish/Tutorial/Updates/checklist popup) + CollapsibleSection/LeftPanelsWidget
+│   ├── histogram_widget.py        # live per-frame BF/FL intensity histogram + density/SNR measures panels (left dock column)
+│   ├── io.py                      # uncompressed-movie loading (nd2 + tiff/ome-tiff), WELL+FRAME path resolution
+│   ├── manifest.py                # CSV manifest, crash-safe good/bad/Q-NQ-X progress tracking, decisions log
+│   ├── metrics.py                 # per-channel (BF/PI) sharpness/drift/saturation/intensity/signal-ratio/histogram proxies
+│   ├── report.py                  # static HTML + CSV report (matplotlib plots, base64-embedded, auto-opened)
+│   ├── checklist.py               # plain-data list of good/bad review criteria shown in the checklist popup
+│   ├── updater.py                 # git fetch/pull + pip reinstall, backing the update button
 │   └── assets/
-│       ├── qc_icon.png      # shared app icon -- same one post-qc will use
-│       ├── qc-banner.png        # top-of-dock banner inside the app (transparent background)
-│       ├── qc-banner-readme.png # same banner, solid black background, used in this README
-│       └── qc-workflow.png      # workflow diagram used in this README
+│       ├── qc_icon.png            # shared app icon -- same one post-qc will use
+│       ├── qc-banner.png          # top-of-dock banner inside the app (transparent background)
+│       ├── qc-banner-readme.png   # same banner, solid black background, used in this README
+│       ├── qc-workflow.png        # workflow diagram used in this README
+│       └── qc-screenshot.png      # real screenshot of the app in use, also used in this README
 └── tests/
-    └── test_pre_qc.py  # io/manifest/metrics logic (no napari/Qt needed)
+    └── test_pre_qc.py             # io/manifest/metrics logic (no napari/Qt needed)
 ```
+
+## Acknowledgments
+
+pre-qc's entire review experience — the image viewer, frame scrubbing,
+layer list, and dock system — is built on
+[napari](https://napari.org) ([source](https://github.com/napari/napari)),
+licensed under BSD-3-Clause. Also built on
+[tifffile](https://github.com/cgohlke/tifffile),
+[nd2](https://github.com/tlambert03/nd2),
+[scikit-image](https://scikit-image.org),
+[matplotlib](https://matplotlib.org),
+[pandas](https://pandas.pydata.org), and
+[NumPy](https://numpy.org) — thanks to everyone who builds and maintains
+these tools.
