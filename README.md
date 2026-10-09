@@ -290,16 +290,20 @@ Once a CSV is loaded:
    over a network mount — a "Loading movie: ‹path›" popup stays up the
    whole time so it's clear the app is still working, not stuck.
 2. Mark the current movie **GOOD** (key `g`) or **BAD** (key `b`) — this
-   saves immediately to `<input>_qc_results.csv` and auto-advances to the
-   next unreviewed row. Quitting partway through and re-running on the same
-   CSV resumes from where you left off instead of restarting. An optional
-   note can be typed any time and persisted on its own with the **Save**
-   button, without needing to also (re-)mark good/bad.
-3. Optionally set a **Q / NQ / X** post-QC label on the current movie
-   (quantifiable / not quantifiable / needs a second look) — independent of
-   GOOD/BAD, meant for a *kept* experiment where most movies are fine but a
-   few individual ones aren't worth including in downstream analysis. Also
-   saved immediately to the sidecar, as `LABEL`.
+   saves immediately to `<input>_qc_results.csv`. Quitting partway through
+   and re-running on the same CSV resumes from where you left off instead
+   of restarting. An optional note can be typed any time and persisted on
+   its own with the **Save** button, without needing to also (re-)mark
+   good/bad.
+3. Set a **Q / NQ / X** post-QC label on the current movie (quantifiable /
+   not quantifiable / needs a second look) — independent of GOOD/BAD, meant
+   for a *kept* experiment where most movies are fine but a few individual
+   ones aren't worth including in downstream analysis. Also saved
+   immediately to the sidecar, as `LABEL`. **Marking a movie GOOD does not
+   auto-advance until it also has a label** — BAD movies advance right
+   away (there's nothing to label), but a GOOD one without Q/NQ/X yet stays
+   put so it can't get skipped unlabeled; setting the label is what moves
+   on to the next row.
 4. Once every resolvable row is marked good, **Finish** computes cheap
    CPU-only analyzability metrics and writes `<input>_qc_report.html` +
    `<input>_qc_metrics.csv`, then opens the HTML report in your browser

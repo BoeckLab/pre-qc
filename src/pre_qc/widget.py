@@ -218,15 +218,8 @@ class QCWidget(QWidget):
         box.setLayout(vbox)
 
         self.position_label = QLabel()
+        self.position_label.setWordWrap(True)
         vbox.addWidget(self.position_label)
-        self.path_label = QLabel()
-        self.path_label.setWordWrap(True)
-        self.path_label.setStyleSheet("color: #888;")
-        vbox.addWidget(self.path_label)
-
-        hint = QLabel("Scroll frames with napari's slider, then mark GOOD (g) or BAD (b).")
-        hint.setWordWrap(True)
-        vbox.addWidget(hint)
 
         self.note_edit = QLineEdit()
         self.note_edit.setPlaceholderText("optional note")
@@ -244,10 +237,7 @@ class QCWidget(QWidget):
         self.bad_btn.clicked.connect(lambda: self._mark("bad"))
         vbox.addWidget(self.bad_btn)
 
-        label_hint = QLabel(
-            "Post-QC label (for a kept experiment): is this specific movie "
-            "usable for downstream analysis?"
-        )
+        label_hint = QLabel("Post-QC label (for a kept experiment):")
         label_hint.setWordWrap(True)
         vbox.addWidget(label_hint)
 
@@ -454,7 +444,6 @@ class QCWidget(QWidget):
         self._load_token += 1
         token = self._load_token
         self._set_controls_enabled(False)
-        self.path_label.setText(f"loading {row.resolved_path} ...")
         self._show_busy_dialog(f"Loading movie:\n{row.resolved_path}")
 
         thread = QThread(self)
@@ -506,7 +495,7 @@ class QCWidget(QWidget):
         self._set_controls_enabled(True)
         row = self._current_row()
         if error is not None:
-            self.path_label.setText(f"FAILED TO LOAD: {error}")
+            self.position_label.setText(f"FAILED TO LOAD: {error}")
             return
         if row is None:
             return
@@ -516,7 +505,6 @@ class QCWidget(QWidget):
             self._layers.append(layer)
         if self.viewer.dims.current_step:
             self.viewer.dims.current_step = (0,) * len(self.viewer.dims.current_step)
-        self.path_label.setText(row.resolution_error or row.resolved_path)
 
     def _set_controls_enabled(self, enabled: bool) -> None:
         for widget in (
@@ -541,13 +529,14 @@ class QCWidget(QWidget):
         )
         if row is None:
             self.position_label.setText("(no rows loaded)")
-            self.path_label.setText("")
             return
-        self.position_label.setText(
+        text = (
             f"[{self.index + 1}/{len(self.rows)}] {row.well}/{row.frame} — "
             f"status: {row.status} — label: {row.label or '(none)'}"
         )
-        self.path_label.setText(row.resolution_error or row.resolved_path)
+        if row.resolution_error:
+            text += f"\n{row.resolution_error}"
+        self.position_label.setText(text)
 
     def _mark(self, status: str) -> None:
         row = self._current_row()
@@ -556,7 +545,14 @@ class QCWidget(QWidget):
         manifest.mark(row, status=status, note=self.note_edit.text())
         manifest.save_results(self.csv_path, self.rows)
         self._refresh_decision_box()
-        self._go_next()
+        self._refresh_labels(row)
+        # A GOOD movie without a Q/NQ/X label yet stays put -- the post-QC
+        # label is the point of marking it good, not an afterthought, so
+        # don't let auto-advance skip past it unlabeled. BAD movies have no
+        # such requirement (there's nothing to label), so they still
+        # auto-advance immediately.
+        if status != "good" or row.label:
+            self._go_next()
 
     def _set_label(self, label: str) -> None:
         row = self._current_row()
@@ -565,6 +561,8 @@ class QCWidget(QWidget):
         manifest.mark(row, label=label)
         manifest.save_results(self.csv_path, self.rows)
         self._refresh_labels(row)
+        if row.status == "good":
+            self._go_next()
 
     def _on_save_clicked(self) -> None:
         row = self._current_row()
