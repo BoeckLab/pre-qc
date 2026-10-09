@@ -136,7 +136,7 @@ sudo apt install sshfs
 brew install macfuse && brew install gromgit/fuse/sshfs-mac   # macFUSE broke Homebrew's official sshfs cask; this tap has a working build
 
 mkdir -p ~/scicore
-sshfs <username>@login-node.scicore.unibas.ch:/scicore/home/boeluc00/<username> ~/scicore -o volname=scicore
+sshfs <username>@login-node.scicore.unibas.ch:/scicore/home/<group>/<username> ~/scicore -o volname=scicore
 ```
 
 (macOS: first install needs a one-time approval in **System Settings →
