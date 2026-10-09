@@ -48,6 +48,7 @@ from qtpy.QtWidgets import (
     QMessageBox,
     QProgressDialog,
     QPushButton,
+    QScrollArea,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -693,29 +694,34 @@ class QCWidget(QWidget):
         )
 
 
+_CHECKLIST_MAX_HEIGHT = 220
+
+
 class ChecklistWidget(QWidget):
     """Read-only reference list of what to look for when deciding
-    good/bad -- docked on the left, below napari's own layer
-    controls/layer list panels (see app.py). Plain data, not editable
-    in-app: see checklist.py to update the list itself once colleague
-    feedback comes in."""
+    good/bad -- docked on the left (see app.py/LeftPanelsWidget). Plain
+    data, not editable in-app: see checklist.py to update the list itself
+    once colleague feedback comes in.
+
+    Scrollable and height-capped rather than growing to fit all items --
+    the list keeps gaining entries as feedback comes in, and letting it
+    expand freely would starve the histogram panels sharing this dock of
+    space."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout()
         self.setLayout(layout)
 
-        box = QGroupBox("What to check for")
-        box_layout = QVBoxLayout()
-        box.setLayout(box_layout)
-
         bullet_text = "\n".join(f"• {item}" for item in CHECKLIST_ITEMS)
         label = QLabel(bullet_text)
         label.setWordWrap(True)
-        box_layout.addWidget(label)
 
-        layout.addWidget(box)
-        layout.addStretch()
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setMaximumHeight(_CHECKLIST_MAX_HEIGHT)
+        scroll.setWidget(label)
+        layout.addWidget(scroll)
 
 
 class CollapsibleSection(QWidget):
@@ -760,6 +766,10 @@ class LeftPanelsWidget(QWidget):
         super().__init__(parent)
         layout = QVBoxLayout()
         self.setLayout(layout)
-        layout.addWidget(CollapsibleSection("Histogram BF", hist_bf))
-        layout.addWidget(CollapsibleSection("Histogram FL", hist_fl))
-        layout.addWidget(CollapsibleSection("QC checklist", checklist))
+        # Stretch factors so the histograms (the main reason this dock
+        # exists) get first claim on extra space -- the checklist is
+        # already height-capped and scrollable (see ChecklistWidget), so it
+        # doesn't need to compete for room.
+        layout.addWidget(CollapsibleSection("Histogram BF", hist_bf), 3)
+        layout.addWidget(CollapsibleSection("Histogram FL", hist_fl), 3)
+        layout.addWidget(CollapsibleSection("QC checklist", checklist), 1)

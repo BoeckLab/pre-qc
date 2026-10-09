@@ -37,28 +37,39 @@ def _fit_window_to_screen(viewer) -> None:
     viewer.window._qt_window.showMaximized()
 
 
+def _remove_layer_controls(viewer) -> None:
+    """Delete napari's native layer-controls dock entirely (contrast
+    limits/colormap/opacity sliders) -- pre-qc never needs to adjust those
+    to judge good/bad, and the space is worth more to the histogram/
+    checklist panels sharing the left column."""
+    try:
+        qt_window = viewer.window._qt_window
+        controls = viewer.window._qt_viewer.dockLayerControls
+    except AttributeError:
+        return
+    qt_window.removeDockWidget(controls)
+    controls.deleteLater()
+
+
 def _arrange_left_column(viewer, qc_panels_dock) -> None:
     """Cap the native layer-list dock's height and let the combined QC
     panels dock (histograms + checklist, each independently collapsible --
-    see LeftPanelsWidget) take the rest. Mirrors the resizeDocks call
-    napari itself makes in Window.__init__ for layer controls vs. layer
-    list, just extending it to our own added dock. No fixed pixel height
-    is needed for the histograms/checklist themselves -- collapsing a
-    section inside that dock simply frees space for the others via normal
-    Qt layout, which adapts to whatever height the dock actually has."""
+    see LeftPanelsWidget) take the rest. No fixed pixel height is needed
+    for the histograms/checklist themselves -- collapsing a section inside
+    that dock simply frees space for the others via normal Qt layout,
+    which adapts to whatever height the dock actually has."""
     try:
         from qtpy.QtCore import Qt as _Qt
 
         qt_viewer = viewer.window._qt_viewer
         qt_window = viewer.window._qt_window
-        controls = qt_viewer.dockLayerControls
         layer_list = qt_viewer.dockLayerList
     except AttributeError:
         return
 
     qt_window.resizeDocks(
-        [controls, layer_list, qc_panels_dock],
-        [controls.minimumHeight(), 90, 10000],
+        [layer_list, qc_panels_dock],
+        [90, 10000],
         _Qt.Orientation.Vertical,
     )
 
@@ -96,14 +107,15 @@ def main(argv=None) -> None:
     viewer = napari.Viewer(title="pre-qc review")
     _apply_app_icon()
     _fit_window_to_screen(viewer)
+    _remove_layer_controls(viewer)
 
-    # "left" is where napari's own layer controls + layer list panels
-    # already live (added automatically by napari.Viewer()) -- docking
-    # here stacks this below them in the same column, rather than
-    # competing for space in the QC review dock on the right. Histograms
-    # and checklist share one dock as inline accordion sections (each with
-    # its own clickable arrowed banner, see LeftPanelsWidget) instead of
-    # three separate docks plus a remote list of toggles.
+    # "left" is where napari's own layer list already lives (added
+    # automatically by napari.Viewer()) -- docking here stacks this below
+    # it in the same column, rather than competing for space in the QC
+    # review dock on the right. Histograms and checklist share one dock as
+    # inline accordion sections (each with its own clickable arrowed
+    # banner, see LeftPanelsWidget) instead of three separate docks plus a
+    # remote list of toggles.
     hist_bf_widget = HistogramWidget("BF intensity")
     hist_fl_widget = HistogramWidget("PI/FL intensity")
     qc_panels_dock = viewer.window.add_dock_widget(

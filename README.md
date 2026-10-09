@@ -338,22 +338,27 @@ the repo link with would land.
 
 ### Left dock column
 
-Below napari's own layer controls/layer list, a single **QC panels** dock
-holds three sections, each collapsed/expanded by clicking its own arrowed
-banner (▸ collapsed / ▾ expanded) — directly inline, not a separate list of
-toggles controlling something elsewhere:
+Napari's native layer-controls dock (contrast limits/colormap/opacity
+sliders) is removed entirely -- pre-qc never needs it, and the space is
+worth more to the panels below. Below napari's own layer list, a single
+**QC panels** dock holds three sections, each collapsed/expanded by
+clicking its own arrowed banner (▸ collapsed / ▾ expanded) — directly
+inline, not a separate list of toggles controlling something elsewhere:
 
 - **Histogram BF** / **Histogram FL** — a live pixel-intensity histogram of
   whichever frame is currently on screen, one per channel, redrawn as you
   scrub frames or switch movies. The same cells-vs-background density read
   as the post-hoc report's histogram (see below), just interactive instead
-  of only generated once at Finish.
+  of only generated once at Finish. These two get first claim on any extra
+  vertical space in the dock (that's the point of this panel), so they end
+  up noticeably taller than the checklist below them.
 - **QC checklist** — a reference list of what to actually look for when
   deciding good vs. bad (focus, drift, PI signal, saturation, artifacts,
   empty fields, unexpected overgrowth/no-growth for a known condition,
   missing channels, frame-count mismatches, unusably low density). Read-only
-  in the app; see `checklist.py` to edit the list itself as colleague
-  feedback comes in.
+  in the app (see `checklist.py` to edit the list itself as colleague
+  feedback comes in) and height-capped with its own scrollbar, so a
+  growing list of items doesn't eat into the histograms' space.
 
 Collapsing a section simply frees its space for the others (normal Qt
 layout, not a fixed pixel split), so any combination fits. The window

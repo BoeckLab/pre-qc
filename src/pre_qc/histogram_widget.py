@@ -21,7 +21,7 @@ class HistogramWidget(QWidget):
         self._title = title
         layout = QVBoxLayout()
         self.setLayout(layout)
-        self.figure = Figure(figsize=(3, 4))
+        self.figure = Figure(figsize=(3, 5))
         self.canvas = FigureCanvasQTAgg(self.figure)
         # Stretch to fill whatever height the dock actually has (figsize is
         # only the initial hint) -- without this the canvas stays pinned
