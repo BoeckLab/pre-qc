@@ -433,6 +433,7 @@ class QCWidget(QWidget):
             if layer in self.viewer.layers:
                 self.viewer.layers.remove(layer)
         self._layers = []
+        self.viewer.text_overlay.visible = False
 
         row = self._current_row()
         self._refresh_labels(row)
@@ -505,6 +506,17 @@ class QCWidget(QWidget):
             self._layers.append(layer)
         if self.viewer.dims.current_step:
             self.viewer.dims.current_step = (0,) * len(self.viewer.dims.current_step)
+
+        # So the reviewer always knows what they're looking at without
+        # reading the dock -- COND if the CSV has one, else WELL/FRAME.
+        self.viewer.text_overlay.text = self._condition_text(row)
+        self.viewer.text_overlay.position = "top_left"
+        self.viewer.text_overlay.visible = True
+
+    @staticmethod
+    def _condition_text(row) -> str:
+        cond = row.extra.get("COND") or row.extra.get("condition")
+        return cond if cond else f"{row.well}/{row.frame}"
 
     def _set_controls_enabled(self, enabled: bool) -> None:
         for widget in (

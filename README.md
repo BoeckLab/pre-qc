@@ -288,7 +288,10 @@ Once a CSV is loaded:
 1. Scroll frames with napari's own slider (channels show as separate,
    additively-blended layers). A movie can take a while to load, especially
    over a network mount — a "Loading movie: ‹path›" popup stays up the
-   whole time so it's clear the app is still working, not stuck.
+   whole time so it's clear the app is still working, not stuck. Once
+   loaded, the movie's `COND` (or `WELL`/`FRAME` if the CSV has no `COND`
+   column) is overlaid top-left on the napari canvas itself, so it's
+   obvious what you're looking at without glancing at the dock.
 2. Mark the current movie **GOOD** (key `g`) or **BAD** (key `b`) — this
    saves immediately to `<input>_qc_results.csv`. Quitting partway through
    and re-running on the same CSV resumes from where you left off instead
