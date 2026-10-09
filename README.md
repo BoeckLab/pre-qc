@@ -354,9 +354,9 @@ more panels:
   feedback comes in.
 
 Five panels (those three plus napari's native layer controls and layer
-list) don't all fit comfortably full-height at once — a **Panels** checkbox
-list at the top of the column collapses whichever isn't needed right now,
-independently of the others.
+list) don't all fit comfortably full-height at once — a **Panels** list of
+dropdown-style toggles (▸ collapsed / ▾ expanded) collapses whichever isn't
+needed right now, independently of the others.
 
 ## What "analyzability" means here
 

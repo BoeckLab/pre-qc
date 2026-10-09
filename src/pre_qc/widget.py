@@ -40,7 +40,6 @@ import numpy as np
 from qtpy.QtCore import QObject, Qt, QThread, QTimer, QUrl, Signal
 from qtpy.QtGui import QDesktopServices, QPixmap
 from qtpy.QtWidgets import (
-    QCheckBox,
     QFileDialog,
     QGroupBox,
     QHBoxLayout,
@@ -49,6 +48,7 @@ from qtpy.QtWidgets import (
     QMessageBox,
     QProgressDialog,
     QPushButton,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -719,11 +719,12 @@ class ChecklistWidget(QWidget):
 
 
 class PanelTogglesWidget(QWidget):
-    """One checkbox per left-column dock (layer controls, layer list, both
-    live histograms, checklist) -- there isn't room for all five open at
-    once, so each can be collapsed independently instead of fighting over
-    fixed heights. Stays in sync if a dock is hidden/shown some other way
-    (e.g. napari's own View menu, or dragging its close button)."""
+    """One disclosure-style dropdown toggle per left-column dock (layer
+    controls, layer list, both live histograms, checklist) -- there isn't
+    room for all five open at once, so each can be collapsed independently
+    instead of fighting over fixed heights. Stays in sync if a dock is
+    hidden/shown some other way (e.g. napari's own View menu, or dragging
+    its close button)."""
 
     def __init__(self, docks: dict, parent=None):
         super().__init__(parent)
@@ -735,11 +736,19 @@ class PanelTogglesWidget(QWidget):
         box.setLayout(box_layout)
 
         for label, dock in docks.items():
-            checkbox = QCheckBox(label)
-            checkbox.setChecked(dock.isVisible())
-            checkbox.toggled.connect(dock.setVisible)
-            dock.visibilityChanged.connect(checkbox.setChecked)
-            box_layout.addWidget(checkbox)
+            button = QToolButton()
+            button.setCheckable(True)
+            button.setChecked(dock.isVisible())
+            button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+            button.setStyleSheet("QToolButton { border: none; text-align: left; }")
+            button.setArrowType(Qt.DownArrow if dock.isVisible() else Qt.RightArrow)
+            button.setText(label)
+            button.toggled.connect(dock.setVisible)
+            button.toggled.connect(
+                lambda checked, b=button: b.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
+            )
+            dock.visibilityChanged.connect(button.setChecked)
+            box_layout.addWidget(button)
 
         layout.addWidget(box)
         layout.addStretch()

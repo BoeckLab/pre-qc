@@ -36,7 +36,7 @@ def _apply_app_icon() -> None:
 # PanelTogglesWidget lets each be collapsed independently; these starting
 # heights are just a reasonable default for everything open together.
 _LAYER_LIST_HEIGHT = 90
-_HISTOGRAM_HEIGHT = 170
+_HISTOGRAM_HEIGHT = 320
 
 
 def _arrange_left_column(viewer, hist_bf_dock, hist_fl_dock, checklist_dock) -> None:

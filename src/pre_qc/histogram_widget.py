@@ -10,7 +10,7 @@ summed-over-all-frames snapshot generated only at Finish time.
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
-from qtpy.QtWidgets import QVBoxLayout, QWidget
+from qtpy.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 
 _N_BINS = 64
 
@@ -21,8 +21,12 @@ class HistogramWidget(QWidget):
         self._title = title
         layout = QVBoxLayout()
         self.setLayout(layout)
-        self.figure = Figure(figsize=(3, 2.2))
+        self.figure = Figure(figsize=(3, 4))
         self.canvas = FigureCanvasQTAgg(self.figure)
+        # Stretch to fill whatever height the dock actually has (figsize is
+        # only the initial hint) -- without this the canvas stays pinned
+        # near its minimum size and most of the taller dock goes unused.
+        self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self.canvas)
         self.ax = self.figure.add_subplot(111)
         self._draw_empty()
