@@ -336,13 +336,27 @@ A **Tutorial** button (always visible, next to Check for Updates) opens this
 README on GitHub in your browser — the same place a colleague you've shared
 the repo link with would land.
 
-A **QC checklist** panel sits on the left, below napari's own layer
-controls/layer list — a reference list of what to actually look for when
-deciding good vs. bad (focus, drift, PI signal, saturation, artifacts, empty
-fields, unexpected overgrowth/no-growth for a known condition, missing
-channels, frame-count mismatches, unusably low density). It's read-only in
-the app; see `checklist.py` to edit the list itself as colleague feedback
-comes in.
+### Left dock column
+
+Below napari's own layer controls/layer list, the left column stacks three
+more panels:
+
+- **Histogram BF** / **Histogram FL** — a live pixel-intensity histogram of
+  whichever frame is currently on screen, one per channel, redrawn as you
+  scrub frames or switch movies. The same cells-vs-background density read
+  as the post-hoc report's histogram (see below), just interactive instead
+  of only generated once at Finish.
+- **QC checklist** — a reference list of what to actually look for when
+  deciding good vs. bad (focus, drift, PI signal, saturation, artifacts,
+  empty fields, unexpected overgrowth/no-growth for a known condition,
+  missing channels, frame-count mismatches, unusably low density). Read-only
+  in the app; see `checklist.py` to edit the list itself as colleague
+  feedback comes in.
+
+Five panels (those three plus napari's native layer controls and layer
+list) don't all fit comfortably full-height at once — a **Panels** checkbox
+list at the top of the column collapses whichever isn't needed right now,
+independently of the others.
 
 ## What "analyzability" means here
 
@@ -427,7 +441,8 @@ pre-qc/
 │   ├── manifest.py  # CSV manifest, crash-safe good/bad/Q-NQ-X progress tracking, decisions log
 │   ├── metrics.py   # per-channel (BF/PI) sharpness/drift/saturation/intensity/signal-ratio/histogram proxies
 │   ├── report.py    # static HTML + CSV report (matplotlib plots, base64-embedded, auto-opened)
-│   ├── widget.py     # napari dock widgets: QC review (load/scroll/mark/label/decide/Finish/Tutorial/Updates) + checklist
+│   ├── widget.py     # napari dock widgets: QC review (load/scroll/mark/label/decide/Finish/Tutorial/Updates) + checklist + panel toggles
+│   ├── histogram_widget.py # live per-frame BF/FL intensity histogram panel (left dock column)
 │   ├── checklist.py # plain-data list of good/bad review criteria shown in the checklist panel
 │   ├── updater.py   # git fetch/pull + pip reinstall, backing the update button
 │   ├── app.py       # CLI entry point (`pre-qc [csv]` -- csv optional, can load later from the app)

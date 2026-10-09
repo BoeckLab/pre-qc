@@ -30,17 +30,21 @@ def _apply_app_icon() -> None:
 
 # Every pre-qc movie is BF and/or PI -- 1 to 3 layers, never a long list --
 # so napari's own default (layer list gets all the leftover vertical space,
-# see napari's Window.__init__) wastes room that the QC checklist panel
-# below it could use instead.
-_LAYER_LIST_HEIGHT = 110
+# see napari's Window.__init__) wastes room that the histogram/checklist
+# panels below it could use instead. Five panels (controls, layer list, 2
+# histograms, checklist) can't all be comfortably full-height at once --
+# PanelTogglesWidget lets each be collapsed independently; these starting
+# heights are just a reasonable default for everything open together.
+_LAYER_LIST_HEIGHT = 90
+_HISTOGRAM_HEIGHT = 170
 
 
-def _shrink_layer_list(viewer, checklist_dock) -> None:
-    """Cap the native layer-list dock's height and let the checklist panel
-    (docked below it in the same left-hand column) take the rest. Mirrors
-    the resizeDocks call napari itself makes in Window.__init__ for
-    layer controls vs. layer list, just adding our checklist as the third,
-    space-absorbing widget."""
+def _arrange_left_column(viewer, hist_bf_dock, hist_fl_dock, checklist_dock) -> None:
+    """Cap the native layer-list dock's and both histogram docks' heights,
+    and let the checklist panel (docked last in the same left-hand column)
+    take whatever's left. Mirrors the resizeDocks call napari itself makes
+    in Window.__init__ for layer controls vs. layer list, just extending it
+    to our own added docks."""
     try:
         from qtpy.QtCore import Qt as _Qt
 
@@ -52,8 +56,8 @@ def _shrink_layer_list(viewer, checklist_dock) -> None:
         return
 
     qt_window.resizeDocks(
-        [controls, layer_list, checklist_dock],
-        [controls.minimumHeight(), _LAYER_LIST_HEIGHT, 10000],
+        [controls, layer_list, hist_bf_dock, hist_fl_dock, checklist_dock],
+        [controls.minimumHeight(), _LAYER_LIST_HEIGHT, _HISTOGRAM_HEIGHT, _HISTOGRAM_HEIGHT, 10000],
         _Qt.Orientation.Vertical,
     )
 
@@ -85,25 +89,52 @@ def main(argv=None) -> None:
 
     import napari
 
-    from .widget import ChecklistWidget, QCWidget
+    from .histogram_widget import HistogramWidget
+    from .widget import ChecklistWidget, PanelTogglesWidget, QCWidget
 
     viewer = napari.Viewer(title="pre-qc review")
     _apply_app_icon()
 
     # "left" is where napari's own layer controls + layer list panels
     # already live (added automatically by napari.Viewer()) -- docking
-    # here stacks this checklist below them in the same column, rather
-    # than competing for space in the QC review dock on the right.
+    # here stacks these below them in the same column, rather than
+    # competing for space in the QC review dock on the right.
+    hist_bf_widget = HistogramWidget("BF intensity")
+    hist_fl_widget = HistogramWidget("PI/FL intensity")
+    hist_bf_dock = viewer.window.add_dock_widget(
+        hist_bf_widget, name="Histogram BF", area="left"
+    )
+    hist_fl_dock = viewer.window.add_dock_widget(
+        hist_fl_widget, name="Histogram FL", area="left"
+    )
     checklist_dock = viewer.window.add_dock_widget(
         ChecklistWidget(), name="QC checklist", area="left"
     )
-    _shrink_layer_list(viewer, checklist_dock)
+    _arrange_left_column(viewer, hist_bf_dock, hist_fl_dock, checklist_dock)
+
+    # A checkbox per left-column dock so all five (native layer controls,
+    # native layer list, both live histograms, checklist) can coexist --
+    # collapse whichever isn't needed right now instead of them fighting
+    # over fixed heights.
+    viewer.window.add_dock_widget(
+        PanelTogglesWidget(
+            {
+                "Layer controls": viewer.window._qt_viewer.dockLayerControls,
+                "Layer list": viewer.window._qt_viewer.dockLayerList,
+                "Histogram BF": hist_bf_dock,
+                "Histogram FL": hist_fl_dock,
+                "QC checklist": checklist_dock,
+            }
+        ),
+        name="Panels",
+        area="left",
+    )
 
     # No CSV required up front -- the widget starts in an idle state (Load
     # CSV button, everything else disabled) and a CSV can be loaded any
     # time, including switching to a different experiment later, which
     # fully resets review state rather than merging with what came before.
-    widget = QCWidget(viewer, None, None)
+    widget = QCWidget(viewer, None, None, hist_bf=hist_bf_widget, hist_fl=hist_fl_widget)
     viewer.window.add_dock_widget(widget, name="QC review", area="right")
 
     csv_path = args.csv or _prompt_for_csv()

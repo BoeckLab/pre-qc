@@ -36,9 +36,11 @@ call returns.
 import webbrowser
 from pathlib import Path
 
+import numpy as np
 from qtpy.QtCore import QObject, Qt, QThread, QTimer, QUrl, Signal
 from qtpy.QtGui import QDesktopServices, QPixmap
 from qtpy.QtWidgets import (
+    QCheckBox,
     QFileDialog,
     QGroupBox,
     QHBoxLayout,
@@ -131,7 +133,7 @@ class _ReportWorker(QObject):
 
 
 class QCWidget(QWidget):
-    def __init__(self, viewer, csv_path=None, rows=None, parent=None):
+    def __init__(self, viewer, csv_path=None, rows=None, parent=None, hist_bf=None, hist_fl=None):
         super().__init__(parent)
         self.viewer = viewer
         self.csv_path = Path(csv_path) if csv_path else None
@@ -145,6 +147,11 @@ class QCWidget(QWidget):
         self._loading_dialog = None
         self._report_thread = None
         self._report_worker = None
+        # Live per-frame histogram panels docked elsewhere in the left
+        # column (see app.py) -- optional, pushed to on movie load/frame
+        # scrub rather than owned by this widget.
+        self.hist_bf = hist_bf
+        self.hist_fl = hist_fl
 
         layout = QVBoxLayout()
         self.setLayout(layout)
@@ -159,6 +166,7 @@ class QCWidget(QWidget):
 
         self.viewer.bind_key("g", lambda v: self._mark("good"), overwrite=True)
         self.viewer.bind_key("b", lambda v: self._mark("bad"), overwrite=True)
+        self.viewer.dims.events.current_step.connect(self._on_frame_changed)
 
         self._refresh_decision_box()
 
@@ -434,6 +442,7 @@ class QCWidget(QWidget):
                 self.viewer.layers.remove(layer)
         self._layers = []
         self.viewer.text_overlay.visible = False
+        self._update_histograms()
 
         row = self._current_row()
         self._refresh_labels(row)
@@ -512,11 +521,36 @@ class QCWidget(QWidget):
         self.viewer.text_overlay.text = self._condition_text(row)
         self.viewer.text_overlay.position = "top_left"
         self.viewer.text_overlay.visible = True
+        self._update_histograms()
 
     @staticmethod
     def _condition_text(row) -> str:
         cond = row.extra.get("COND") or row.extra.get("condition")
         return cond if cond else f"{row.well}/{row.frame}"
+
+    def _on_frame_changed(self, event=None) -> None:
+        self._update_histograms()
+
+    def _update_histograms(self) -> None:
+        """Push the currently-displayed frame's pixel data into the live
+        histogram panels (see app.py/histogram_widget.py) -- channel 0 is
+        BF, channel 1 (if present) is PI/FL, matching the convention used
+        throughout metrics.py. Clears both when nothing is loaded."""
+        if not self._layers:
+            if self.hist_bf is not None:
+                self.hist_bf.set_frame(None)
+            if self.hist_fl is not None:
+                self.hist_fl.set_frame(None)
+            return
+
+        t = self.viewer.dims.current_step[0] if self.viewer.dims.current_step else 0
+        if self.hist_bf is not None:
+            self.hist_bf.set_frame(np.asarray(self._layers[0].data[t]))
+        if self.hist_fl is not None:
+            if len(self._layers) > 1:
+                self.hist_fl.set_frame(np.asarray(self._layers[1].data[t]))
+            else:
+                self.hist_fl.set_frame(None)
 
     def _set_controls_enabled(self, enabled: bool) -> None:
         for widget in (
@@ -679,6 +713,33 @@ class ChecklistWidget(QWidget):
         label = QLabel(bullet_text)
         label.setWordWrap(True)
         box_layout.addWidget(label)
+
+        layout.addWidget(box)
+        layout.addStretch()
+
+
+class PanelTogglesWidget(QWidget):
+    """One checkbox per left-column dock (layer controls, layer list, both
+    live histograms, checklist) -- there isn't room for all five open at
+    once, so each can be collapsed independently instead of fighting over
+    fixed heights. Stays in sync if a dock is hidden/shown some other way
+    (e.g. napari's own View menu, or dragging its close button)."""
+
+    def __init__(self, docks: dict, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+
+        box = QGroupBox("Panels")
+        box_layout = QVBoxLayout()
+        box.setLayout(box_layout)
+
+        for label, dock in docks.items():
+            checkbox = QCheckBox(label)
+            checkbox.setChecked(dock.isVisible())
+            checkbox.toggled.connect(dock.setVisible)
+            dock.visibilityChanged.connect(checkbox.setChecked)
+            box_layout.addWidget(checkbox)
 
         layout.addWidget(box)
         layout.addStretch()
